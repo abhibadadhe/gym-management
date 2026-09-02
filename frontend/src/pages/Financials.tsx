@@ -68,37 +68,81 @@ export const Financials: React.FC = () => {
       </div>
 
       {/* Primary KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Lifetime Revenue */}
-        <div className="glass-panel p-5 rounded-3xl space-y-2 shadow-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* 1. All-Time Total Revenue */}
+        <div className="glass-panel p-5 rounded-3xl space-y-2 shadow-sm border border-emerald-200/80 bg-emerald-50/20">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">All-Time Revenue</span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+            <span className="text-xs font-bold text-emerald-800 uppercase tracking-wider text-[10px]">
+              All-Time Total Revenue
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
           <h3 className="text-2xl font-black text-slate-900 font-heading">{formatINR(summary.total_revenue)}</h3>
-          <span className="text-[11px] text-slate-500 block font-medium">
-            Memberships + Supplements combined
+          <span className="text-[11px] text-emerald-700 font-medium block">
+            Combined Fees & Supplements
           </span>
         </div>
 
-        {/* Total Lifetime Expenses */}
+        {/* 2. All-Time Fees Collection */}
+        <div className="glass-panel p-5 rounded-3xl space-y-2 shadow-sm border border-orange-200/80 bg-orange-50/20">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-orange-800 uppercase tracking-wider text-[10px]">
+              Fees Collection (All-Time)
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center font-bold text-xs">
+              🏋️
+            </div>
+          </div>
+          <h3 className="text-2xl font-black text-slate-900 font-heading">
+            {formatINR(summary.membership_revenue?.all_time ?? summary.total_revenue)}
+          </h3>
+          <span className="text-[11px] text-slate-500 block font-medium">
+            Gym membership enrollments & renewals
+          </span>
+        </div>
+
+        {/* 3. All-Time Supplements Revenue */}
+        <div className="glass-panel p-5 rounded-3xl space-y-2 shadow-sm border border-amber-200/80 bg-amber-50/20">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-amber-800 uppercase tracking-wider text-[10px]">
+              Supplements Revenue (All-Time)
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-xs">
+              🛍️
+            </div>
+          </div>
+          <h3 className="text-2xl font-black text-amber-900 font-heading">
+            {formatINR(summary.supplement_revenue?.all_time ?? 0)}
+          </h3>
+          <span className="text-[11px] text-slate-500 block font-medium">
+            Supplement & nutrition store sales
+          </span>
+        </div>
+
+        {/* 4. All-Time Expenses */}
         <div className="glass-panel p-5 rounded-3xl space-y-2 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">All-Time Expenses</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-[10px]">
+              All-Time Expenses
+            </span>
             <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
               <TrendingDown className="w-4 h-4" />
             </div>
           </div>
           <h3 className="text-2xl font-black text-rose-600 font-heading">{formatINR(summary.total_expenses)}</h3>
-          <span className="text-[11px] text-slate-400 block">Operating expenditures & bills</span>
+          <span className="text-[11px] text-slate-400 block font-medium">
+            Operating expenditures & bills
+          </span>
         </div>
 
-        {/* Net All-Time Profit */}
+        {/* 5. All-Time Net Profit */}
         <div className="glass-panel p-5 rounded-3xl space-y-2 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">All-Time Net Profit</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-[10px]">
+              All-Time Net Profit
+            </span>
             <div
               className={`w-8 h-8 rounded-xl flex items-center justify-center ${
                 isProfitable
@@ -116,94 +160,25 @@ export const Financials: React.FC = () => {
           >
             {formatINR(summary.net_profit)}
           </h3>
-          <span className="text-[11px] text-slate-400 block">Total Revenue minus Expenses</span>
+          <span className="text-[11px] text-slate-400 block font-medium">
+            Total Revenue minus Expenses
+          </span>
         </div>
 
-        {/* Pending Receivables */}
+        {/* 6. Pending Receivables */}
         <div className="glass-panel p-5 rounded-3xl space-y-2 shadow-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">Pending Receivables</span>
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider text-[10px]">
+              Pending Receivables
+            </span>
             <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center">
               <CreditCard className="w-4 h-4" />
             </div>
           </div>
           <h3 className="text-2xl font-black text-rose-600 font-heading">{formatINR(summary.pending_dues)}</h3>
-          <span className="text-[11px] text-rose-600 font-medium">Unpaid member dues to collect</span>
-        </div>
-      </div>
-
-      {/* Revenue Streams Breakdown: Memberships vs Supplements */}
-      <div className="glass-panel p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-2">
-          <div>
-            <h3 className="text-sm font-bold text-slate-900 font-heading">
-              Revenue Stream Breakdown (Memberships vs Supplements)
-            </h3>
-            <p className="text-xs text-slate-500">
-              Total Revenue automatically accounts for all income streams generated by Morya Fitness.
-            </p>
-          </div>
-          <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200 self-start sm:self-auto">
-            Combined Total: {formatINR(summary.total_revenue)}
+          <span className="text-[11px] text-rose-600 font-medium">
+            Unpaid member dues to collect
           </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Stream 1: Memberships */}
-          <div className="p-4 rounded-2xl bg-orange-50/60 border border-orange-100 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-orange-500 text-white flex items-center justify-center font-bold text-base shadow-sm">
-                  🏋️
-                </div>
-                <div>
-                  <span className="font-bold text-slate-900 text-xs block">Gym Membership Plans</span>
-                  <span className="text-[10px] text-slate-500">New enrollments & membership renewals</span>
-                </div>
-              </div>
-              <span className="font-mono font-black text-slate-900 text-sm">
-                {formatINR(summary.membership_revenue?.all_time ?? summary.total_revenue)}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-orange-200/50 text-[11px]">
-              <div>
-                <span className="text-slate-500 block">Today's Fees:</span>
-                <strong className="text-slate-800">{formatINR(summary.membership_revenue?.today ?? 0)}</strong>
-              </div>
-              <div>
-                <span className="text-slate-500 block">This Month:</span>
-                <strong className="text-slate-800">{formatINR(summary.membership_revenue?.this_month ?? 0)}</strong>
-              </div>
-            </div>
-          </div>
-
-          {/* Stream 2: Supplements & Store */}
-          <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-100 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold text-base shadow-sm">
-                  🛍️
-                </div>
-                <div>
-                  <span className="font-bold text-slate-900 text-xs block">Supplements & Store Sales</span>
-                  <span className="text-[10px] text-slate-500">Whey, Creatine, Pre-workout & nutrition</span>
-                </div>
-              </div>
-              <span className="font-mono font-black text-amber-900 text-sm">
-                {formatINR(summary.supplement_revenue?.all_time ?? 0)}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-2 pt-2 border-t border-amber-200/50 text-[11px]">
-              <div>
-                <span className="text-slate-500 block">Today's Sales:</span>
-                <strong className="text-slate-800">{formatINR(summary.supplement_revenue?.today ?? 0)}</strong>
-              </div>
-              <div>
-                <span className="text-slate-500 block">This Month:</span>
-                <strong className="text-slate-800">{formatINR(summary.supplement_revenue?.this_month ?? 0)}</strong>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
