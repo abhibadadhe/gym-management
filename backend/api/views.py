@@ -1,0 +1,979 @@
+import json
+from decimal import Decimal
+from datetime import date, datetime, timedelta
+from django.db.models import Sum, Count, Q, F
+from django.utils import timezone
+from django.shortcuts import get_object_or_404
+from django.http import HttpResponse, JsonResponse
+from django.core import serializers as django_serializers
+
+from rest_framework import viewsets, status, permissions
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.decorators import action
+from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+from .models import (
+    User, GymSettings, Trainer, MembershipPlan, Member,
+    MemberMembership, Payment, Attendance, WorkoutPlan,
+    WorkoutExercise, Expense, AuditLog
+)
+from .serializers import (
+    UserSerializer, GymSettingsSerializer, TrainerSerializer,
+    MembershipPlanSerializer, MemberListSerializer, MemberDetailSerializer,
+    MemberMembershipSerializer, PaymentSerializer, AttendanceSerializer,
+    WorkoutPlanSerializer, WorkoutExerciseSerializer, ExpenseSerializer,
+    AuditLogSerializer, AddMemberWithMembershipSerializer,
+    RenewMembershipSerializer, QuickPaymentSerializer,
+    AttendanceCheckInSerializer
+)
+from .permissions import IsAdminUserRole, IsReceptionistOrAdmin, IsStaffUser, IsAdminOrReadOnly
+from .utils import log_audit, get_whatsapp_templates
+
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        user = self.user
+        data['user'] = {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'full_name': user.get_full_name() or user.username,
+            'role': user.role,
+            'phone': user.phone,
+        }
+        settings = GymSettings.get_settings()
+        data['gym'] = {
+            'name': settings.name,
+            'tagline': settings.tagline,
+            'phone': settings.phone,
+            'address': settings.address,
+            'upi_id': settings.upi_id,
+        }
+        
+        # Log login
+        log_audit(user, 'USER_LOGIN', 'USER', user.id, f"User {user.username} logged in successfully.")
+        return data
+
+
+class CustomTokenObtainPairView(TokenObtainPairView):
+    serializer_class = CustomTokenObtainPairSerializer
+
+
+class UserProfileView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data)
+
+    def put(self, request):
+        user = request.user
+        serializer = UserSerializer(user, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            log_audit(user, 'PROFILE_UPDATED', 'USER', user.id, "Updated own profile.")
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class GymSettingsView(APIView):
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsStaffUser()]
+        return [IsAdminUserRole()]
+
+    def get(self, request):
+        settings = GymSettings.get_settings()
+        serializer = GymSettingsSerializer(settings)
+        return Response(serializer.data)
+
+    def put(self, request):
+        settings = GymSettings.get_settings()
+        serializer = GymSettingsSerializer(settings, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            log_audit(request.user, 'SETTINGS_UPDATED', 'GYM_SETTINGS', settings.id, "Updated gym settings.")
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class DashboardStatsView(APIView):
+    permission_classes = [IsStaffUser]
+
+    def get(self, request):
+        today = timezone.localdate()
+        this_month_start = today.replace(day=1)
+        
+        # 1. Member Counts
+        all_members = Member.objects.filter(is_active=True)
+        total_members = all_members.count()
+        
+        active_count = 0
+        expiring_soon_count = 0
+        expired_count = 0
+
+        expiring_members_list = []
+        pending_dues_list = []
+        today_birthdays_list = []
+
+        for m in all_members.prefetch_related('memberships', 'memberships__plan'):
+            status_val = m.membership_status
+            if status_val == 'ACTIVE':
+                active_count += 1
+            elif status_val == 'EXPIRING_SOON':
+                expiring_soon_count += 1
+                curr = m.current_membership
+                expiring_members_list.append({
+                    'id': m.id,
+                    'member_id': m.member_id,
+                    'full_name': m.full_name,
+                    'phone': m.phone,
+                    'plan_name': curr.plan.name if curr and curr.plan else 'N/A',
+                    'end_date': curr.end_date if curr else None,
+                    'days_remaining': m.days_remaining
+                })
+            elif status_val in ['EXPIRED', 'NO_MEMBERSHIP']:
+                expired_count += 1
+
+            curr = m.current_membership
+            if curr and curr.pending_amount > 0:
+                pending_dues_list.append({
+                    'id': m.id,
+                    'member_id': m.member_id,
+                    'full_name': m.full_name,
+                    'phone': m.phone,
+                    'plan_name': curr.plan.name,
+                    'pending_amount': float(curr.pending_amount)
+                })
+
+            if m.dob and m.dob.month == today.month and m.dob.day == today.day:
+                today_birthdays_list.append({
+                    'id': m.id,
+                    'member_id': m.member_id,
+                    'full_name': m.full_name,
+                    'phone': m.phone,
+                    'dob': m.dob
+                })
+
+        new_members_this_month = all_members.filter(joining_date__gte=this_month_start).count()
+
+        # 2. Today's Attendance
+        today_attendance = Attendance.objects.filter(date=today).count()
+
+        # 3. Financial Collections
+        today_collection = Payment.objects.filter(payment_date=today).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        this_month_collection = Payment.objects.filter(payment_date__gte=this_month_start).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        
+        # Pending dues total
+        total_pending = MemberMembership.objects.filter(
+            member__is_active=True
+        ).aggregate(total=Sum('pending_amount'))['total'] or Decimal('0.00')
+
+        # 4. 14-Day Attendance Trend
+        attendance_trend = []
+        for i in range(13, -1, -1):
+            d = today - timedelta(days=i)
+            count = Attendance.objects.filter(date=d).count()
+            attendance_trend.append({
+                'date': d.strftime('%d %b'),
+                'count': count
+            })
+
+        # 5. 6-Month Revenue Trend
+        revenue_trend = []
+        for i in range(5, -1, -1):
+            # calculate year and month
+            m_year = today.year
+            m_month = today.month - i
+            while m_month <= 0:
+                m_month += 12
+                m_year -= 1
+            m_start = date(m_year, m_month, 1)
+            if m_month == 12:
+                m_end = date(m_year + 1, 1, 1) - timedelta(days=1)
+            else:
+                m_end = date(m_year, m_month + 1, 1) - timedelta(days=1)
+            
+            m_rev = Payment.objects.filter(payment_date__range=[m_start, m_end]).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            m_exp = Expense.objects.filter(date__range=[m_start, m_end]).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            
+            revenue_trend.append({
+                'month': m_start.strftime('%b %Y'),
+                'revenue': float(m_rev),
+                'expenses': float(m_exp),
+                'profit': float(m_rev - m_exp)
+            })
+
+        # 6. Plan Distribution
+        plan_counts = MemberMembership.objects.values('plan__name').annotate(count=Count('id')).order_by('-count')
+        plan_distribution = [
+            {'name': p['plan__name'] or 'Custom', 'value': p['count']}
+            for p in plan_counts if p['plan__name']
+        ]
+
+        # 7. Recent Check-ins
+        recent_checkins = Attendance.objects.select_related('member').order_by('-check_in_time')[:8]
+        recent_checkins_data = AttendanceSerializer(recent_checkins, many=True).data
+
+        return Response({
+            'kpis': {
+                'total_members': total_members,
+                'active_members': active_count,
+                'expiring_soon': expiring_soon_count,
+                'expired_members': expired_count,
+                'today_attendance': today_attendance,
+                'today_collection': float(today_collection),
+                'this_month_collection': float(this_month_collection),
+                'pending_payments': float(total_pending),
+                'new_members_this_month': new_members_this_month,
+            },
+            'revenue_trend': revenue_trend,
+            'attendance_trend': attendance_trend,
+            'plan_distribution': plan_distribution,
+            'recent_checkins': recent_checkins_data,
+            'expiring_members': expiring_members_list[:10],
+            'pending_dues': pending_dues_list[:10],
+            'today_birthdays': today_birthdays_list,
+        })
+
+
+class MemberViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsReceptionistOrAdmin]
+    queryset = Member.objects.filter(is_active=True)
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return MemberDetailSerializer
+        return MemberListSerializer
+
+    def get_queryset(self):
+        qs = Member.objects.filter(is_active=True).prefetch_related('memberships', 'memberships__plan', 'assigned_trainer')
+        search = self.request.query_params.get('search', '').strip()
+        status_filter = self.request.query_params.get('status', '').upper()
+        trainer_id = self.request.query_params.get('trainer')
+
+        if search:
+            qs = qs.filter(
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search) |
+                Q(phone__icontains=search) |
+                Q(member_id__icontains=search)
+            )
+
+        if trainer_id:
+            qs = qs.filter(assigned_trainer_id=trainer_id)
+
+        # Status filtering
+        if status_filter:
+            today = timezone.localdate()
+            if status_filter == 'ACTIVE':
+                qs = [m for m in qs if m.membership_status == 'ACTIVE']
+            elif status_filter == 'EXPIRING_SOON':
+                qs = [m for m in qs if m.membership_status == 'EXPIRING_SOON']
+            elif status_filter == 'EXPIRED':
+                qs = [m for m in qs if m.membership_status in ['EXPIRED', 'NO_MEMBERSHIP']]
+            elif status_filter == 'PENDING_PAYMENT':
+                qs = [m for m in qs if m.current_membership and m.current_membership.pending_amount > 0]
+
+        return qs
+
+    def perform_destroy(self, instance):
+        # Soft delete
+        instance.is_active = False
+        instance.save()
+        log_audit(self.request.user, 'MEMBER_DELETED', 'MEMBER', instance.id, f"Soft-deleted member {instance.full_name} ({instance.member_id})")
+
+    @action(detail=False, methods=['post'], url_path='onboard')
+    def onboard_member(self, request):
+        serializer = AddMemberWithMembershipSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        data = serializer.validated_data
+        plan = get_object_or_404(MembershipPlan, id=data['plan_id'])
+        start_date = data.get('start_date', date.today())
+        end_date = start_date + timedelta(days=plan.duration_days)
+
+        # 1. Create Member
+        member_id = Member.generate_member_id()
+        member = Member.objects.create(
+            member_id=member_id,
+            first_name=data['first_name'],
+            last_name=data['last_name'],
+            phone=data['phone'],
+            email=data.get('email', ''),
+            dob=data.get('dob'),
+            gender=data.get('gender', 'MALE'),
+            address=data.get('address', ''),
+            emergency_contact_name=data.get('emergency_contact_name', ''),
+            emergency_contact_phone=data.get('emergency_contact_phone', ''),
+            source=data.get('source', 'WALK_IN'),
+            joining_date=data.get('joining_date', date.today()),
+            assigned_trainer_id=data.get('assigned_trainer_id'),
+            notes=data.get('notes', ''),
+        )
+
+        # 2. Create Membership
+        price = plan.price
+        discount = data.get('discount', Decimal('0.00'))
+        final_amount = max(Decimal('0.00'), price - discount)
+        paid_amount = min(final_amount, data.get('paid_amount', Decimal('0.00')))
+        pending_amount = max(Decimal('0.00'), final_amount - paid_amount)
+
+        membership = MemberMembership.objects.create(
+            member=member,
+            plan=plan,
+            start_date=start_date,
+            end_date=end_date,
+            price=price,
+            discount=discount,
+            final_amount=final_amount,
+            paid_amount=paid_amount,
+            pending_amount=pending_amount,
+            is_renewal=False,
+            notes="Initial Registration",
+        )
+
+        # 3. Create Payment if paid_amount > 0
+        payment = None
+        if paid_amount > 0:
+            receipt_no = Payment.generate_receipt_number()
+            payment = Payment.objects.create(
+                receipt_number=receipt_no,
+                member=member,
+                membership=membership,
+                amount=paid_amount,
+                payment_method=data.get('payment_method', 'UPI'),
+                transaction_ref=data.get('transaction_ref', ''),
+                payment_date=date.today(),
+                notes="Initial membership registration payment",
+                received_by=request.user,
+            )
+
+        log_audit(
+            request.user,
+            'MEMBER_ONBOARDED',
+            'MEMBER',
+            member.id,
+            f"Created new member {member.full_name} ({member.member_id}) with {plan.name} plan."
+        )
+
+        return Response({
+            'message': 'Member created successfully!',
+            'member': MemberDetailSerializer(member).data,
+            'receipt': PaymentSerializer(payment).data if payment else None
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'], url_path='renew')
+    def renew_membership(self, request, pk=None):
+        member = self.get_object()
+        serializer = RenewMembershipSerializer(data={**request.data, 'member_id': member.id})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        data = serializer.validated_data
+        plan = get_object_or_404(MembershipPlan, id=data['plan_id'])
+        
+        # Calculate new start date: if current membership is still active, start on expiry + 1 day
+        curr = member.current_membership
+        today = date.today()
+        if data.get('start_date'):
+            new_start_date = data['start_date']
+        elif curr and curr.end_date >= today:
+            new_start_date = curr.end_date + timedelta(days=1)
+        else:
+            new_start_date = today
+
+        new_end_date = new_start_date + timedelta(days=plan.duration_days)
+
+        price = plan.price
+        discount = data.get('discount', Decimal('0.00'))
+        final_amount = max(Decimal('0.00'), price - discount)
+        paid_amount = min(final_amount, data.get('paid_amount', Decimal('0.00')))
+        pending_amount = max(Decimal('0.00'), final_amount - paid_amount)
+
+        # Create new renewal subscription (never overwrite historical records)
+        membership = MemberMembership.objects.create(
+            member=member,
+            plan=plan,
+            start_date=new_start_date,
+            end_date=new_end_date,
+            price=price,
+            discount=discount,
+            final_amount=final_amount,
+            paid_amount=paid_amount,
+            pending_amount=pending_amount,
+            is_renewal=True,
+            notes=data.get('notes', 'Membership Renewal'),
+        )
+
+        payment = None
+        if paid_amount > 0:
+            receipt_no = Payment.generate_receipt_number()
+            payment = Payment.objects.create(
+                receipt_number=receipt_no,
+                member=member,
+                membership=membership,
+                amount=paid_amount,
+                payment_method=data.get('payment_method', 'UPI'),
+                transaction_ref=data.get('transaction_ref', ''),
+                payment_date=date.today(),
+                notes=f"Renewal payment for {plan.name}",
+                received_by=request.user,
+            )
+
+        log_audit(
+            request.user,
+            'MEMBERSHIP_RENEWED',
+            'MEMBER',
+            member.id,
+            f"Renewed {member.full_name} ({member.member_id}) for {plan.name} until {new_end_date}."
+        )
+
+        return Response({
+            'message': 'Membership renewed successfully!',
+            'member': MemberDetailSerializer(member).data,
+            'membership': MemberMembershipSerializer(membership).data,
+            'receipt': PaymentSerializer(payment).data if payment else None
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=['get'], url_path='whatsapp')
+    def get_whatsapp_links(self, request, pk=None):
+        member = self.get_object()
+        templates = get_whatsapp_templates(member)
+        return Response({
+            'member_id': member.member_id,
+            'name': member.full_name,
+            'phone': member.phone,
+            'templates': templates
+        })
+
+    @action(detail=True, methods=['get'], url_path='qr')
+    def get_qr_pass(self, request, pk=None):
+        member = self.get_object()
+        settings = GymSettings.get_settings()
+        curr = member.current_membership
+        return Response({
+            'gym_name': settings.name,
+            'tagline': settings.tagline,
+            'address': settings.address,
+            'phone': settings.phone,
+            'member_id': member.member_id,
+            'full_name': member.full_name,
+            'phone_number': member.phone,
+            'qr_token': member.qr_token,
+            'joining_date': member.joining_date,
+            'plan_name': curr.plan.name if curr and curr.plan else 'General',
+            'expiry_date': curr.end_date if curr else None,
+            'status': member.membership_status,
+        })
+
+
+class MembershipPlanViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAdminOrReadOnly]
+    queryset = MembershipPlan.objects.all().order_by('duration_days')
+    serializer_class = MembershipPlanSerializer
+
+    def perform_create(self, serializer):
+        plan = serializer.save()
+        log_audit(self.request.user, 'PLAN_CREATED', 'PLAN', plan.id, f"Created plan {plan.name} at ₹{plan.price}")
+
+    def perform_update(self, serializer):
+        plan = serializer.save()
+        log_audit(self.request.user, 'PLAN_UPDATED', 'PLAN', plan.id, f"Updated plan {plan.name} at ₹{plan.price}")
+
+
+class PaymentViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsReceptionistOrAdmin]
+    queryset = Payment.objects.all().select_related('member', 'membership', 'received_by')
+    serializer_class = PaymentSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        member_id = self.request.query_params.get('member_id')
+        method = self.request.query_params.get('method')
+        start_date = self.request.query_params.get('start_date')
+        end_date = self.request.query_params.get('end_date')
+
+        if member_id:
+            qs = qs.filter(member_id=member_id)
+        if method:
+            qs = qs.filter(payment_method=method)
+        if start_date:
+            qs = qs.filter(payment_date__gte=start_date)
+        if end_date:
+            qs = qs.filter(payment_date__lte=end_date)
+        return qs
+
+    def perform_create(self, serializer):
+        payment = serializer.save(received_by=self.request.user)
+        log_audit(
+            self.request.user,
+            'PAYMENT_RECEIVED',
+            'PAYMENT',
+            payment.id,
+            f"Received ₹{payment.amount} via {payment.payment_method} from {payment.member.full_name} ({payment.receipt_number})"
+        )
+
+    @action(detail=False, methods=['get'], url_path='pending-dues')
+    def pending_dues(self, request):
+        memberships = MemberMembership.objects.filter(
+            pending_amount__gt=0,
+            member__is_active=True
+        ).select_related('member', 'plan')
+        data = MemberMembershipSerializer(memberships, many=True).data
+        return Response(data)
+
+    @action(detail=True, methods=['get'], url_path='receipt')
+    def get_receipt(self, request, pk=None):
+        payment = self.get_object()
+        settings = GymSettings.get_settings()
+        member = payment.member
+        membership = payment.membership
+
+        plan_price = float(membership.price) if membership else float(payment.amount)
+        discount = float(membership.discount) if membership else 0.0
+        final_amount = float(membership.final_amount) if membership else float(payment.amount)
+        paid_amount = float(membership.paid_amount) if membership else float(payment.amount)
+        pending_amount = float(membership.pending_amount) if membership else 0.0
+
+        cashier_name = payment.received_by.get_full_name() if payment.received_by else 'Gokul Gugale (Admin)'
+
+        return Response({
+            'gym': {
+                'name': settings.name,
+                'tagline': settings.tagline,
+                'address': settings.address,
+                'phone': settings.phone,
+                'email': settings.email,
+                'upi_id': settings.upi_id,
+            },
+            'receipt_number': payment.receipt_number,
+            'payment_date': str(payment.payment_date),
+            'date': str(payment.payment_date),
+            'created_at': payment.created_at.isoformat(),
+            'member': {
+                'id': member.id,
+                'member_id': member.member_id,
+                'name': member.full_name,
+                'full_name': member.full_name,
+                'phone': member.phone,
+                'email': member.email,
+                'address': member.address,
+            },
+            'plan': {
+                'name': membership.plan.name if membership and membership.plan else 'Gym Membership Fee',
+                'duration_days': membership.plan.duration_days if membership and membership.plan else 30,
+                'start_date': str(membership.start_date) if membership else str(payment.payment_date),
+                'end_date': str(membership.end_date) if membership else None,
+                'price': plan_price,
+                'plan_price': plan_price,
+                'discount': discount,
+                'final_amount': final_amount,
+                'paid_amount': paid_amount,
+                'pending_amount': pending_amount,
+            },
+            'membership': {
+                'start_date': str(membership.start_date) if membership else str(payment.payment_date),
+                'end_date': str(membership.end_date) if membership else None,
+            },
+            'discount_applied': discount,
+            'final_payable': final_amount,
+            'amount_paid': float(payment.amount),
+            'remaining_pending_dues': pending_amount,
+            'payment_method': payment.get_payment_method_display(),
+            'transaction_ref': payment.transaction_ref,
+            'received_by': cashier_name,
+            'payment': {
+                'amount': float(payment.amount),
+                'method': payment.get_payment_method_display(),
+                'transaction_ref': payment.transaction_ref,
+                'notes': payment.notes,
+                'received_by': cashier_name,
+            }
+        })
+
+
+class AttendanceViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsStaffUser]
+    queryset = Attendance.objects.all().select_related('member')
+    serializer_class = AttendanceSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        date_param = self.request.query_params.get('date')
+        member_id = self.request.query_params.get('member_id')
+        if date_param:
+            qs = qs.filter(date=date_param)
+        if member_id:
+            qs = qs.filter(member_id=member_id)
+        return qs
+
+    @action(detail=False, methods=['post'], url_path='check-in')
+    def check_in(self, request):
+        serializer = AttendanceCheckInSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        identifier = serializer.validated_data['identifier'].strip()
+        method = serializer.validated_data.get('method', 'QR_SCAN')
+
+        # Find member by QR token, Member ID, or Phone
+        member = Member.objects.filter(
+            Q(qr_token=identifier) |
+            Q(member_id__iexact=identifier) |
+            Q(phone=identifier),
+            is_active=True
+        ).first()
+
+        if not member:
+            return Response({
+                'success': False,
+                'message': f"No member found matching '{identifier}'. Please verify Member ID or Phone number."
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Check membership status
+        mem_status = member.membership_status
+        today = timezone.localdate()
+
+        if mem_status in ['EXPIRED', 'NO_MEMBERSHIP']:
+            return Response({
+                'success': False,
+                'status': 'EXPIRED',
+                'message': 'Membership Expired – Please Renew to record attendance!',
+                'member': {
+                    'id': member.id,
+                    'member_id': member.member_id,
+                    'full_name': member.full_name,
+                    'phone': member.phone,
+                    'status': mem_status,
+                    'expiry_date': member.current_membership.end_date if member.current_membership else None,
+                }
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        # Check if already checked in today
+        existing = Attendance.objects.filter(member=member, date=today).first()
+        if existing:
+            return Response({
+                'success': True,
+                'status': 'ALREADY_CHECKED_IN',
+                'message': f"{member.full_name} is already checked in today at {existing.check_in_time.strftime('%I:%M %p')}.",
+                'member': {
+                    'id': member.id,
+                    'member_id': member.member_id,
+                    'full_name': member.full_name,
+                    'phone': member.phone,
+                    'status': mem_status,
+                    'days_remaining': member.days_remaining
+                },
+                'attendance': AttendanceSerializer(existing).data
+            })
+
+        # Record check-in
+        record = Attendance.objects.create(
+            member=member,
+            date=today,
+            check_in_time=timezone.now(),
+            check_in_method=method
+        )
+
+        return Response({
+            'success': True,
+            'status': 'SUCCESS',
+            'message': f"Welcome {member.full_name}! Check-in recorded at {record.check_in_time.strftime('%I:%M %p')}.",
+            'member': {
+                'id': member.id,
+                'member_id': member.member_id,
+                'full_name': member.full_name,
+                'phone': member.phone,
+                'status': mem_status,
+                'days_remaining': member.days_remaining
+            },
+            'attendance': AttendanceSerializer(record).data
+        }, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'], url_path='stats')
+    def attendance_stats(self, request):
+        today = timezone.localdate()
+        
+        # Today's hourly distribution (6 AM to 10 PM)
+        today_records = Attendance.objects.filter(date=today)
+        hours_distribution = []
+        for h in range(6, 23):
+            # Check local hour
+            count = sum(1 for r in today_records if timezone.localtime(r.check_in_time).hour == h)
+            label = f"{h if h <= 12 else h - 12} {'AM' if h < 12 else 'PM'}"
+            hours_distribution.append({'hour': label, 'count': count})
+
+        # Top 5 most active members this month
+        month_start = today.replace(day=1)
+        top_active = Member.objects.filter(
+            attendance_records__date__gte=month_start,
+            is_active=True
+        ).annotate(
+            visit_count=Count('attendance_records')
+        ).order_by('-visit_count')[:5]
+
+        top_active_data = [
+            {
+                'id': m.id,
+                'member_id': m.member_id,
+                'full_name': m.full_name,
+                'phone': m.phone,
+                'visit_count': m.visit_count,
+            }
+            for m in top_active
+        ]
+
+        return Response({
+            'today_total': today_records.count(),
+            'hours_distribution': hours_distribution,
+            'top_active_members': top_active_data
+        })
+
+
+class TrainerViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsStaffUser]
+    queryset = Trainer.objects.all()
+    serializer_class = TrainerSerializer
+
+    def perform_create(self, serializer):
+        trainer = serializer.save()
+        log_audit(self.request.user, 'TRAINER_ADDED', 'TRAINER', trainer.id, f"Added trainer {trainer.name}")
+
+
+class WorkoutPlanViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsStaffUser]
+    queryset = WorkoutPlan.objects.all().select_related('member', 'trainer').prefetch_related('exercises')
+    serializer_class = WorkoutPlanSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        member_id = self.request.query_params.get('member_id')
+        if member_id:
+            qs = qs.filter(member_id=member_id)
+        return qs
+
+    @action(detail=True, methods=['post'], url_path='add-exercise')
+    def add_exercise(self, request, pk=None):
+        plan = self.get_object()
+        serializer = WorkoutExerciseSerializer(data={**request.data, 'workout_plan': plan.id})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ExpenseViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsReceptionistOrAdmin]
+    queryset = Expense.objects.all().select_related('recorded_by')
+    serializer_class = ExpenseSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        category = self.request.query_params.get('category')
+        start_date = self.request.query_params.get('start_date')
+        end_date = self.request.query_params.get('end_date')
+
+        if category:
+            qs = qs.filter(category=category)
+        if start_date:
+            qs = qs.filter(date__gte=start_date)
+        if end_date:
+            qs = qs.filter(date__lte=end_date)
+        return qs
+
+    def perform_create(self, serializer):
+        expense = serializer.save(recorded_by=self.request.user)
+        log_audit(
+            self.request.user,
+            'EXPENSE_RECORDED',
+            'EXPENSE',
+            expense.id,
+            f"Recorded expense {expense.expense_id} of ₹{expense.amount} under {expense.get_category_display()}"
+        )
+
+
+class FinancialSummaryView(APIView):
+    permission_classes = [IsReceptionistOrAdmin]
+
+    def get(self, request):
+        today = date.today()
+        month_start = today.replace(day=1)
+        
+        # Last month
+        first_day_current = month_start
+        last_month_end = first_day_current - timedelta(days=1)
+        last_month_start = last_month_end.replace(day=1)
+
+        # Revenue
+        total_rev = Payment.objects.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        today_rev = Payment.objects.filter(payment_date=today).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        this_month_rev = Payment.objects.filter(payment_date__gte=month_start).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        last_month_rev = Payment.objects.filter(payment_date__range=[last_month_start, last_month_end]).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+
+        # Expenses
+        total_exp = Expense.objects.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        this_month_exp = Expense.objects.filter(date__gte=month_start).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        last_month_exp = Expense.objects.filter(date__range=[last_month_start, last_month_end]).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+
+        # Dues
+        pending_dues = MemberMembership.objects.filter(member__is_active=True).aggregate(total=Sum('pending_amount'))['total'] or Decimal('0.00')
+
+        # Category breakdown
+        cat_expenses = Expense.objects.values('category').annotate(total=Sum('amount')).order_by('-total')
+        categories_data = [
+            {
+                'category': c['category'],
+                'category_name': dict(Expense.CATEGORY_CHOICES).get(c['category'], c['category']),
+                'total': float(c['total'])
+            }
+            for c in cat_expenses
+        ]
+
+        return Response({
+            'total_revenue': float(total_rev),
+            'total_expenses': float(total_exp),
+            'net_profit': float(total_rev - total_exp),
+            'today_collection': float(today_rev),
+            'this_month_collection': float(this_month_rev),
+            'last_month_collection': float(last_month_rev),
+            'this_month_expenses': float(this_month_exp),
+            'last_month_expenses': float(last_month_exp),
+            'this_month_profit': float(this_month_rev - this_month_exp),
+            'pending_dues': float(pending_dues),
+            'category_expenses': categories_data,
+        })
+
+
+class ReportsView(APIView):
+    permission_classes = [IsReceptionistOrAdmin]
+
+    def get(self, request):
+        report_type = request.query_params.get('type', 'members')
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+
+        if report_type == 'members':
+            qs = Member.objects.filter(is_active=True).prefetch_related('memberships', 'memberships__plan')
+            if start_date:
+                qs = qs.filter(joining_date__gte=start_date)
+            if end_date:
+                qs = qs.filter(joining_date__lte=end_date)
+            
+            data = [
+                {
+                    'Member ID': m.member_id,
+                    'Name': m.full_name,
+                    'Phone': m.phone,
+                    'Gender': m.gender,
+                    'Joining Date': str(m.joining_date),
+                    'Plan': m.current_membership.plan.name if m.current_membership and m.current_membership.plan else 'None',
+                    'Start Date': str(m.current_membership.start_date) if m.current_membership else 'N/A',
+                    'Expiry Date': str(m.current_membership.end_date) if m.current_membership else 'N/A',
+                    'Status': m.membership_status,
+                    'Pending (₹)': float(m.current_membership.pending_amount) if m.current_membership else 0.0
+                }
+                for m in qs
+            ]
+            return Response({'title': 'Member Registry Report', 'data': data})
+
+        elif report_type == 'payments':
+            qs = Payment.objects.select_related('member', 'membership__plan', 'received_by')
+            if start_date:
+                qs = qs.filter(payment_date__gte=start_date)
+            if end_date:
+                qs = qs.filter(payment_date__lte=end_date)
+
+            data = [
+                {
+                    'Receipt No': p.receipt_number,
+                    'Date': str(p.payment_date),
+                    'Member ID': p.member.member_id,
+                    'Member Name': p.member.full_name,
+                    'Plan': p.membership.plan.name if p.membership and p.membership.plan else 'N/A',
+                    'Amount (₹)': float(p.amount),
+                    'Method': p.get_payment_method_display(),
+                    'Ref No': p.transaction_ref or 'N/A',
+                    'Received By': p.received_by.get_full_name() if p.received_by else 'Admin'
+                }
+                for p in qs
+            ]
+            return Response({'title': 'Payments & Collection Report', 'data': data})
+
+        elif report_type == 'attendance':
+            qs = Attendance.objects.select_related('member')
+            if start_date:
+                qs = qs.filter(date__gte=start_date)
+            if end_date:
+                qs = qs.filter(date__lte=end_date)
+
+            data = [
+                {
+                    'Date': str(a.date),
+                    'Check-in Time': a.check_in_time.strftime('%I:%M %p'),
+                    'Member ID': a.member.member_id,
+                    'Name': a.member.full_name,
+                    'Phone': a.member.phone,
+                    'Method': a.get_check_in_method_display()
+                }
+                for a in qs
+            ]
+            return Response({'title': 'Attendance Logs Report', 'data': data})
+
+        elif report_type == 'financials':
+            rev_qs = Payment.objects.all()
+            exp_qs = Expense.objects.all()
+            if start_date:
+                rev_qs = rev_qs.filter(payment_date__gte=start_date)
+                exp_qs = exp_qs.filter(date__gte=start_date)
+            if end_date:
+                rev_qs = rev_qs.filter(payment_date__lte=end_date)
+                exp_qs = exp_qs.filter(date__lte=end_date)
+
+            total_rev = rev_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+            total_exp = exp_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+
+            return Response({
+                'title': 'Financial P&L Report',
+                'summary': {
+                    'total_revenue': float(total_rev),
+                    'total_expenses': float(total_exp),
+                    'net_profit': float(total_rev - total_exp)
+                }
+            })
+
+        return Response({'error': 'Invalid report type'}, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [IsAdminUserRole]
+    queryset = AuditLog.objects.all().select_related('user')
+    serializer_class = AuditLogSerializer
+
+
+class DatabaseBackupView(APIView):
+    permission_classes = [IsAdminUserRole]
+
+    def get(self, request):
+        """
+        Exports a complete JSON dump of all gym data.
+        """
+        data = {
+            'exported_at': timezone.now().isoformat(),
+            'gym_settings': json.loads(django_serializers.serialize('json', GymSettings.objects.all())),
+            'plans': json.loads(django_serializers.serialize('json', MembershipPlan.objects.all())),
+            'trainers': json.loads(django_serializers.serialize('json', Trainer.objects.all())),
+            'members': json.loads(django_serializers.serialize('json', Member.objects.all())),
+            'memberships': json.loads(django_serializers.serialize('json', MemberMembership.objects.all())),
+            'payments': json.loads(django_serializers.serialize('json', Payment.objects.all())),
+            'attendance': json.loads(django_serializers.serialize('json', Attendance.objects.all())),
+            'expenses': json.loads(django_serializers.serialize('json', Expense.objects.all())),
+            'workouts': json.loads(django_serializers.serialize('json', WorkoutPlan.objects.all())),
+            'audit_logs': json.loads(django_serializers.serialize('json', AuditLog.objects.all())),
+        }
+        log_audit(request.user, 'BACKUP_CREATED', 'SYSTEM', 0, "Generated system database backup.")
+        return JsonResponse(data, safe=False)

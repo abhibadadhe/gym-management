@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # ============================================================================
+  # 1. PostgreSQL 16 Database
+  # ============================================================================
+  postgres_db:
+    image: postgres:16-alpine
+    container_name: morya_fitness_db
+    restart: always
+    environment:
+      POSTGRES_DB: morya_fitness_db
+      POSTGRES_USER: morya_user
+      POSTGRES_PASSWORD: morya_secure_password_2026
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U morya_user -d morya_fitness_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # 2. Django Backend (Gunicorn)
+  # ============================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: morya_fitness_backend
+    restart: always
+    environment:
+      DJANGO_SECRET_KEY: 'prod-morya-fitness-super-secret-key-change-this'
+      DJANGO_DEBUG: 'False'
+      DJANGO_ALLOWED_HOSTS: '*'
+      DATABASE_URL: 'postgres://morya_user:morya_secure_password_2026@postgres_db:5432/morya_fitness_db'
+    volumes:
+      - media_volume:/app/media
+      - static_volume:/app/staticfiles
+    depends_on:
+      postgres_db:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py reset_data &&
+             python manage.py collectstatic --noinput &&
+             gunicorn morya_backend.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+    ports:
+      - "8000:8000"
+
+  # ============================================================================
+  # 3. React Frontend (Nginx Reverse Proxy)
+  # ============================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: morya_fitness_frontend
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  media_volume:
+  static_volume:
