@@ -58,7 +58,7 @@ services:
     container_name: morya_fitness_frontend
     restart: always
     ports:
-      - "80:80"
+      - "${FRONTEND_PORT:-8080}:80"
     depends_on:
       - backend
     volumes:
