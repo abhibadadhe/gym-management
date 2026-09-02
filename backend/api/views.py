@@ -812,11 +812,23 @@ class FinancialSummaryView(APIView):
         last_month_end = first_day_current - timedelta(days=1)
         last_month_start = last_month_end.replace(day=1)
 
-        # Revenue
-        total_rev = Payment.objects.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        today_rev = Payment.objects.filter(payment_date=today).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        this_month_rev = Payment.objects.filter(payment_date__gte=month_start).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        last_month_rev = Payment.objects.filter(payment_date__range=[last_month_start, last_month_end]).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        # Revenue from Membership Fees
+        mem_total_rev = Payment.objects.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        mem_today_rev = Payment.objects.filter(payment_date=today).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        mem_this_month_rev = Payment.objects.filter(payment_date__gte=month_start).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        mem_last_month_rev = Payment.objects.filter(payment_date__range=[last_month_start, last_month_end]).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+
+        # Revenue from Supplements & Store Sales
+        sup_total_rev = SupplementSale.objects.aggregate(total=Sum('final_amount'))['total'] or Decimal('0.00')
+        sup_today_rev = SupplementSale.objects.filter(sale_date__date=today).aggregate(total=Sum('final_amount'))['total'] or Decimal('0.00')
+        sup_this_month_rev = SupplementSale.objects.filter(sale_date__date__gte=month_start).aggregate(total=Sum('final_amount'))['total'] or Decimal('0.00')
+        sup_last_month_rev = SupplementSale.objects.filter(sale_date__date__range=[last_month_start, last_month_end]).aggregate(total=Sum('final_amount'))['total'] or Decimal('0.00')
+
+        # Combined Total Revenues
+        total_rev = mem_total_rev + sup_total_rev
+        today_rev = mem_today_rev + sup_today_rev
+        this_month_rev = mem_this_month_rev + sup_this_month_rev
+        last_month_rev = mem_last_month_rev + sup_last_month_rev
 
         # Expenses
         total_exp = Expense.objects.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
@@ -849,6 +861,19 @@ class FinancialSummaryView(APIView):
             'this_month_profit': float(this_month_rev - this_month_exp),
             'pending_dues': float(pending_dues),
             'category_expenses': categories_data,
+            # Dedicated Stream Breakdown
+            'membership_revenue': {
+                'all_time': float(mem_total_rev),
+                'today': float(mem_today_rev),
+                'this_month': float(mem_this_month_rev),
+                'last_month': float(mem_last_month_rev),
+            },
+            'supplement_revenue': {
+                'all_time': float(sup_total_rev),
+                'today': float(sup_today_rev),
+                'this_month': float(sup_this_month_rev),
+                'last_month': float(sup_last_month_rev),
+            },
         })
 
 
@@ -928,22 +953,29 @@ class ReportsView(APIView):
             return Response({'title': 'Attendance Logs Report', 'data': data})
 
         elif report_type == 'financials':
-            rev_qs = Payment.objects.all()
+            mem_qs = Payment.objects.all()
+            sup_qs = SupplementSale.objects.all()
             exp_qs = Expense.objects.all()
             if start_date:
-                rev_qs = rev_qs.filter(payment_date__gte=start_date)
+                mem_qs = mem_qs.filter(payment_date__gte=start_date)
+                sup_qs = sup_qs.filter(sale_date__date__gte=start_date)
                 exp_qs = exp_qs.filter(date__gte=start_date)
             if end_date:
-                rev_qs = rev_qs.filter(payment_date__lte=end_date)
+                mem_qs = mem_qs.filter(payment_date__lte=end_date)
+                sup_qs = sup_qs.filter(sale_date__date__lte=end_date)
                 exp_qs = exp_qs.filter(date__lte=end_date)
 
-            total_rev = rev_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+            mem_rev = mem_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+            sup_rev = sup_qs.aggregate(t=Sum('final_amount'))['t'] or Decimal('0.00')
+            total_rev = mem_rev + sup_rev
             total_exp = exp_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
 
             return Response({
                 'title': 'Financial P&L Report',
                 'summary': {
                     'total_revenue': float(total_rev),
+                    'membership_revenue': float(mem_rev),
+                    'supplement_revenue': float(sup_rev),
                     'total_expenses': float(total_exp),
                     'net_profit': float(total_rev - total_exp)
                 }
