@@ -194,27 +194,38 @@ export const Financials: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-3 gap-3 text-center text-xs">
-            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-              <span className="text-[10px] text-slate-500 uppercase font-bold block">Collections</span>
-              <span className="text-lg font-black text-slate-900 font-heading block mt-0.5">
-                {formatINR(summary.this_month_collection)}
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Collections</span>
+                <span className="text-lg font-black text-slate-900 font-heading block mt-0.5">
+                  {formatINR(summary.this_month_collection)}
+                </span>
+              </div>
+              <span className="text-[9px] text-slate-400 block mt-1 font-medium">
+                Fees: {formatINR(summary.membership_revenue?.this_month ?? 0)} | Sup: {formatINR(summary.supplement_revenue?.this_month ?? 0)}
               </span>
             </div>
-            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-              <span className="text-[10px] text-slate-500 uppercase font-bold block">Expenses</span>
-              <span className="text-lg font-black text-rose-600 font-heading block mt-0.5">
-                {formatINR(summary.this_month_expenses)}
-              </span>
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Expenses</span>
+                <span className="text-lg font-black text-rose-600 font-heading block mt-0.5">
+                  {formatINR(summary.this_month_expenses)}
+                </span>
+              </div>
+              <span className="text-[9px] text-slate-400 block mt-1 font-medium">Operating Bills</span>
             </div>
-            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-              <span className="text-[10px] text-slate-500 uppercase font-bold block">Net Margin</span>
-              <span
-                className={`text-lg font-black font-heading block mt-0.5 ${
-                  isMonthProfitable ? 'text-emerald-600' : 'text-rose-600'
-                }`}
-              >
-                {formatINR(summary.this_month_profit)}
-              </span>
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Net Margin</span>
+                <span
+                  className={`text-lg font-black font-heading block mt-0.5 ${
+                    isMonthProfitable ? 'text-emerald-600' : 'text-rose-600'
+                  }`}
+                >
+                  {formatINR(summary.this_month_profit)}
+                </span>
+              </div>
+              <span className="text-[9px] text-slate-400 block mt-1 font-medium">Collection - Expense</span>
             </div>
           </div>
         </div>
@@ -229,23 +240,34 @@ export const Financials: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-3 gap-3 text-center text-xs">
-            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-              <span className="text-[10px] text-slate-500 uppercase font-bold block">Collections</span>
-              <span className="text-lg font-black text-slate-900 font-heading block mt-0.5">
-                {formatINR(summary.last_month_collection)}
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Collections</span>
+                <span className="text-lg font-black text-slate-900 font-heading block mt-0.5">
+                  {formatINR(summary.last_month_collection)}
+                </span>
+              </div>
+              <span className="text-[9px] text-slate-400 block mt-1 font-medium">
+                Fees: {formatINR(summary.membership_revenue?.last_month ?? 0)} | Sup: {formatINR(summary.supplement_revenue?.last_month ?? 0)}
               </span>
             </div>
-            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-              <span className="text-[10px] text-slate-500 uppercase font-bold block">Expenses</span>
-              <span className="text-lg font-black text-rose-600 font-heading block mt-0.5">
-                {formatINR(summary.last_month_expenses)}
-              </span>
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Expenses</span>
+                <span className="text-lg font-black text-rose-600 font-heading block mt-0.5">
+                  {formatINR(summary.last_month_expenses)}
+                </span>
+              </div>
+              <span className="text-[9px] text-slate-400 block mt-1 font-medium">Operating Bills</span>
             </div>
-            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-              <span className="text-[10px] text-slate-500 uppercase font-bold block">Net Margin</span>
-              <span className="text-lg font-black text-emerald-600 font-heading block mt-0.5">
-                {formatINR(summary.last_month_collection - summary.last_month_expenses)}
-              </span>
+            <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] text-slate-500 uppercase font-bold block">Net Margin</span>
+                <span className="text-lg font-black text-emerald-600 font-heading block mt-0.5">
+                  {formatINR(summary.last_month_collection - summary.last_month_expenses)}
+                </span>
+              </div>
+              <span className="text-[9px] text-slate-400 block mt-1 font-medium">Collection - Expense</span>
             </div>
           </div>
         </div>
