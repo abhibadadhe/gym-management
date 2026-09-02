@@ -6,7 +6,8 @@ from decimal import Decimal
 from .models import (
     User, GymSettings, Trainer, MembershipPlan, Member,
     MemberMembership, Payment, Attendance, WorkoutPlan,
-    WorkoutExercise, Expense, AuditLog
+    WorkoutExercise, Expense, AuditLog,
+    SupplementCategory, SupplementProduct, SupplementSale, SupplementSaleItem
 )
 
 class UserSerializer(serializers.ModelSerializer):
@@ -262,3 +263,121 @@ class QuickPaymentSerializer(serializers.Serializer):
 class AttendanceCheckInSerializer(serializers.Serializer):
     identifier = serializers.CharField(help_text="Can be QR token, Member ID (MF20260001), or Phone number")
     method = serializers.ChoiceField(choices=Attendance.METHOD_CHOICES, default='QR_SCAN')
+
+
+class SupplementCategorySerializer(serializers.ModelSerializer):
+    products_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SupplementCategory
+        fields = ['id', 'name', 'description', 'products_count', 'created_at']
+
+    def get_products_count(self, obj):
+        return obj.products.filter(is_active=True).count()
+
+
+class SupplementProductSerializer(serializers.ModelSerializer):
+    category_name = serializers.ReadOnlyField(source='category.name')
+    is_low_stock = serializers.ReadOnlyField()
+
+    class Meta:
+        model = SupplementProduct
+        fields = [
+            'id', 'name', 'brand', 'category', 'category_name', 'flavor',
+            'weight_or_servings', 'cost_price', 'selling_price', 'stock_quantity',
+            'min_stock_alert', 'is_low_stock', 'expiry_date', 'image', 'is_active',
+            'created_at', 'updated_at'
+        ]
+
+
+class SupplementSaleItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SupplementSaleItem
+        fields = [
+            'id', 'product', 'product_name', 'product_brand',
+            'quantity', 'unit_price', 'cost_price', 'subtotal'
+        ]
+        read_only_fields = ['id', 'product_name', 'product_brand', 'cost_price', 'subtotal']
+
+
+class SupplementSaleSerializer(serializers.ModelSerializer):
+    items = SupplementSaleItemSerializer(many=True)
+    sold_by_name = serializers.ReadOnlyField(source='sold_by.get_full_name')
+    payment_method_display = serializers.CharField(source='get_payment_method_display', read_only=True)
+
+    class Meta:
+        model = SupplementSale
+        fields = [
+            'id', 'invoice_number', 'member', 'customer_name', 'customer_phone',
+            'subtotal', 'discount', 'final_amount', 'payment_method',
+            'payment_method_display', 'sold_by', 'sold_by_name', 'sale_date',
+            'notes', 'items', 'created_at'
+        ]
+        read_only_fields = ['id', 'invoice_number', 'subtotal', 'final_amount', 'created_at']
+
+    def create(self, validated_data):
+        items_data = validated_data.pop('items', [])
+        if not items_data:
+            raise serializers.ValidationError({"items": "At least one supplement item is required."})
+
+        # Calculate totals and validate stock
+        calculated_subtotal = Decimal('0.00')
+        prepared_items = []
+
+        for item_data in items_data:
+            product = item_data.get('product')
+            quantity = item_data.get('quantity', 1)
+            unit_price = item_data.get('unit_price') or (product.selling_price if product else Decimal('0.00'))
+
+            if not product:
+                raise serializers.ValidationError({"items": "A valid product must be selected for each item."})
+
+            if product.stock_quantity < quantity:
+                raise serializers.ValidationError({
+                    "items": f"Insufficient stock for '{product.name}'. Available: {product.stock_quantity}, requested: {quantity}."
+                })
+
+            item_subtotal = Decimal(str(unit_price)) * quantity
+            calculated_subtotal += item_subtotal
+
+            prepared_items.append({
+                'product': product,
+                'product_name': product.name,
+                'product_brand': product.brand,
+                'quantity': quantity,
+                'unit_price': unit_price,
+                'cost_price': product.cost_price,
+                'subtotal': item_subtotal,
+            })
+
+        discount = validated_data.get('discount', Decimal('0.00'))
+        final_amount = max(Decimal('0.00'), calculated_subtotal - Decimal(str(discount)))
+
+        if not validated_data.get('invoice_number'):
+            validated_data['invoice_number'] = SupplementSale.generate_invoice_number()
+
+        validated_data['subtotal'] = calculated_subtotal
+        validated_data['final_amount'] = final_amount
+
+        # Create the Sale
+        sale = SupplementSale.objects.create(**validated_data)
+
+        # Create Items & Deduct Stock
+        for prep in prepared_items:
+            product = prep['product']
+            SupplementSaleItem.objects.create(
+                sale=sale,
+                product=product,
+                product_name=prep['product_name'],
+                product_brand=prep['product_brand'],
+                quantity=prep['quantity'],
+                unit_price=prep['unit_price'],
+                cost_price=prep['cost_price'],
+                subtotal=prep['subtotal'],
+            )
+            # Deduct inventory
+            product.stock_quantity = max(0, product.stock_quantity - prep['quantity'])
+            product.save(update_fields=['stock_quantity', 'updated_at'])
+
+        return sale
+

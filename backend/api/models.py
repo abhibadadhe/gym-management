@@ -383,3 +383,100 @@ class AuditLog(models.Model):
     def __str__(self):
         username = self.user.username if self.user else "System"
         return f"[{self.timestamp.strftime('%Y-%m-%d %H:%M')}] {username} - {self.action} on {self.entity_type} {self.entity_id}"
+
+
+class SupplementCategory(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = 'Supplement Categories'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class SupplementProduct(models.Model):
+    name = models.CharField(max_length=150)
+    brand = models.CharField(max_length=100, default='Optimum Nutrition')
+    category = models.ForeignKey(SupplementCategory, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
+    flavor = models.CharField(max_length=100, blank=True, default='Chocolate')
+    weight_or_servings = models.CharField(max_length=100, blank=True, default='1 kg / 30 servings')
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, help_text="Purchase/Cost price in INR")
+    selling_price = models.DecimalField(max_digits=10, decimal_places=2, help_text="Selling/MRP price in INR")
+    stock_quantity = models.PositiveIntegerField(default=0, help_text="Current available stock units")
+    min_stock_alert = models.PositiveIntegerField(default=3, help_text="Threshold to trigger low-stock warning")
+    expiry_date = models.DateField(null=True, blank=True)
+    image = models.ImageField(upload_to='supplements/', blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.brand}) - ₹{self.selling_price}"
+
+    @property
+    def is_low_stock(self):
+        return self.stock_quantity <= self.min_stock_alert
+
+
+class SupplementSale(models.Model):
+    PAYMENT_METHOD_CHOICES = [
+        ('CASH', 'Cash'),
+        ('UPI', 'UPI / GPay / PhonePe / Paytm'),
+        ('CARD', 'Credit / Debit Card'),
+        ('NETBANKING', 'Net Banking / Transfer'),
+    ]
+
+    invoice_number = models.CharField(max_length=50, unique=True, db_index=True)
+    member = models.ForeignKey(Member, on_delete=models.SET_NULL, null=True, blank=True, related_name='supplement_purchases')
+    customer_name = models.CharField(max_length=150)
+    customer_phone = models.CharField(max_length=20, blank=True)
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    discount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    final_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default='UPI')
+    sold_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    sale_date = models.DateTimeField(default=timezone.now)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-sale_date']
+
+    def __str__(self):
+        return f"{self.invoice_number} - {self.customer_name} (₹{self.final_amount})"
+
+    @classmethod
+    def generate_invoice_number(cls):
+        year = date.today().year
+        prefix = f"MF-SUP-{year}-"
+        latest = cls.objects.filter(invoice_number__startswith=prefix).order_by('-invoice_number').first()
+        if latest:
+            try:
+                seq = int(latest.invoice_number[len(prefix):]) + 1
+            except ValueError:
+                seq = 1
+        else:
+            seq = 1
+        return f"{prefix}{seq:04d}"
+
+
+class SupplementSaleItem(models.Model):
+    sale = models.ForeignKey(SupplementSale, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(SupplementProduct, on_delete=models.SET_NULL, null=True, related_name='sale_items')
+    product_name = models.CharField(max_length=150)
+    product_brand = models.CharField(max_length=100, blank=True)
+    quantity = models.PositiveIntegerField(default=1)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    cost_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    subtotal = models.DecimalField(max_digits=10, decimal_places=2)
+
+    def __str__(self):
+        return f"{self.product_name} x {self.quantity} (₹{self.subtotal})"
+

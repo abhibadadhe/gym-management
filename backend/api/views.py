@@ -17,7 +17,8 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import (
     User, GymSettings, Trainer, MembershipPlan, Member,
     MemberMembership, Payment, Attendance, WorkoutPlan,
-    WorkoutExercise, Expense, AuditLog
+    WorkoutExercise, Expense, AuditLog,
+    SupplementCategory, SupplementProduct, SupplementSale, SupplementSaleItem
 )
 from .serializers import (
     UserSerializer, GymSettingsSerializer, TrainerSerializer,
@@ -26,7 +27,9 @@ from .serializers import (
     WorkoutPlanSerializer, WorkoutExerciseSerializer, ExpenseSerializer,
     AuditLogSerializer, AddMemberWithMembershipSerializer,
     RenewMembershipSerializer, QuickPaymentSerializer,
-    AttendanceCheckInSerializer
+    AttendanceCheckInSerializer,
+    SupplementCategorySerializer, SupplementProductSerializer,
+    SupplementSaleSerializer, SupplementSaleItemSerializer
 )
 from .permissions import IsAdminUserRole, IsReceptionistOrAdmin, IsStaffUser, IsAdminOrReadOnly
 from .utils import log_audit, get_whatsapp_templates
@@ -977,3 +980,146 @@ class DatabaseBackupView(APIView):
         }
         log_audit(request.user, 'BACKUP_CREATED', 'SYSTEM', 0, "Generated system database backup.")
         return JsonResponse(data, safe=False)
+
+
+# ============================================================================
+# SUPPLEMENTS & STORE VIEWSETS
+# ============================================================================
+
+class SupplementCategoryViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsStaffUser]
+    queryset = SupplementCategory.objects.all().prefetch_related('products')
+    serializer_class = SupplementCategorySerializer
+
+
+class SupplementProductViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsStaffUser]
+    queryset = SupplementProduct.objects.all().select_related('category')
+    serializer_class = SupplementProductSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        category_id = self.request.query_params.get('category')
+        search = self.request.query_params.get('search')
+        low_stock_only = self.request.query_params.get('low_stock')
+
+        if category_id:
+            qs = qs.filter(category_id=category_id)
+        if search:
+            qs = qs.filter(
+                Q(name__icontains=search) |
+                Q(brand__icontains=search) |
+                Q(flavor__icontains=search)
+            )
+        if low_stock_only == 'true':
+            qs = qs.filter(stock_quantity__lte=F('min_stock_alert'))
+
+        return qs
+
+    @action(detail=True, methods=['post'], url_path='restock')
+    def restock(self, request, pk=None):
+        product = self.get_object()
+        added_qty = int(request.data.get('quantity', 0))
+        cost_price = request.data.get('cost_price')
+
+        if added_qty <= 0:
+            return Response({'error': 'Quantity to restock must be greater than 0.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        product.stock_quantity += added_qty
+        if cost_price:
+            product.cost_price = Decimal(str(cost_price))
+        product.save(update_fields=['stock_quantity', 'cost_price', 'updated_at'])
+
+        log_audit(
+            request.user, 'SUPPLEMENT_RESTOCKED', 'SupplementProduct', product.id,
+            f"Restocked {added_qty} units of '{product.name}' (Total stock now: {product.stock_quantity})"
+        )
+
+        return Response({
+            'message': f"Successfully added {added_qty} units to {product.name}.",
+            'product': SupplementProductSerializer(product).data
+        })
+
+
+class SupplementSaleViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsStaffUser]
+    queryset = SupplementSale.objects.all().select_related('member', 'sold_by').prefetch_related('items__product')
+    serializer_class = SupplementSaleSerializer
+
+    def perform_create(self, serializer):
+        sale = serializer.save(sold_by=self.request.user)
+        log_audit(
+            self.request.user, 'SUPPLEMENT_SOLD', 'SupplementSale', sale.id,
+            f"Sold supplements to '{sale.customer_name}' for ₹{sale.final_amount} (Invoice: {sale.invoice_number})"
+        )
+
+    @action(detail=True, methods=['get'], url_path='receipt')
+    def receipt(self, request, pk=None):
+        sale = self.get_object()
+        settings = GymSettings.get_settings()
+        cashier_name = sale.sold_by.get_full_name() if sale.sold_by else "Admin"
+
+        items_list = []
+        for item in sale.items.all():
+            items_list.append({
+                'id': item.id,
+                'name': item.product_name,
+                'brand': item.product_brand,
+                'quantity': item.quantity,
+                'unit_price': float(item.unit_price),
+                'subtotal': float(item.subtotal),
+            })
+
+        return Response({
+            'gym': {
+                'name': settings.name,
+                'tagline': settings.tagline,
+                'address': settings.address,
+                'phone': settings.phone,
+                'email': settings.email,
+                'upi_id': settings.upi_id,
+            },
+            'invoice_number': sale.invoice_number,
+            'sale_date': sale.sale_date.strftime('%d-%b-%Y %I:%M %p'),
+            'date': sale.sale_date.strftime('%d-%b-%Y'),
+            'time': sale.sale_date.strftime('%I:%M %p'),
+            'customer_name': sale.customer_name,
+            'customer_phone': sale.customer_phone or "N/A",
+            'member_id': sale.member.member_id if sale.member else None,
+            'items': items_list,
+            'subtotal': float(sale.subtotal),
+            'discount': float(sale.discount),
+            'final_amount': float(sale.final_amount),
+            'payment_method': sale.get_payment_method_display(),
+            'sold_by': cashier_name,
+            'notes': sale.notes or "",
+        })
+
+    @action(detail=False, methods=['get'], url_path='summary')
+    def summary(self, request):
+        today = date.today()
+        first_day_of_month = today.replace(day=1)
+
+        # Product & Inventory stats
+        products = SupplementProduct.objects.filter(is_active=True)
+        total_products = products.count()
+        low_stock_count = products.filter(stock_quantity__lte=F('min_stock_alert')).count()
+
+        total_inventory_cost = sum([p.stock_quantity * p.cost_price for p in products])
+        total_retail_valuation = sum([p.stock_quantity * p.selling_price for p in products])
+
+        # Sales stats
+        today_sales = SupplementSale.objects.filter(sale_date__date=today).aggregate(t=Sum('final_amount'))['t'] or Decimal('0.00')
+        monthly_sales = SupplementSale.objects.filter(sale_date__date__gte=first_day_of_month).aggregate(t=Sum('final_amount'))['t'] or Decimal('0.00')
+        lifetime_sales = SupplementSale.objects.aggregate(t=Sum('final_amount'))['t'] or Decimal('0.00')
+
+        return Response({
+            'total_products': total_products,
+            'low_stock_count': low_stock_count,
+            'total_inventory_cost': float(total_inventory_cost),
+            'total_retail_valuation': float(total_retail_valuation),
+            'today_sales': float(today_sales),
+            'monthly_sales': float(monthly_sales),
+            'lifetime_sales': float(lifetime_sales),
+        })
+

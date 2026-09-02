@@ -3,7 +3,9 @@ import {
   User, GymSettings, Trainer, MembershipPlan, Member,
   MemberMembership, Payment, Attendance, WorkoutPlan,
   WorkoutExercise, Expense, AuditLog, DashboardData,
-  ReceiptData, MemberWhatsAppTemplates
+  ReceiptData, MemberWhatsAppTemplates,
+  SupplementCategory, SupplementProduct, SupplementSale,
+  SupplementSummary, SupplementReceiptData
 } from '../types';
 
 const API_BASE = '/api';
@@ -223,4 +225,51 @@ export const api = {
     const res = await apiClient.get('/backup/');
     return res.data;
   },
+
+  // Supplements & Store
+  getSupplementCategories: async (): Promise<SupplementCategory[]> => {
+    const res = await apiClient.get('/supplements/categories/');
+    return res.data;
+  },
+  createSupplementCategory: async (data: Partial<SupplementCategory>): Promise<SupplementCategory> => {
+    const res = await apiClient.post('/supplements/categories/', data);
+    return res.data;
+  },
+  getSupplementProducts: async (params?: { category?: number; search?: string; low_stock?: boolean }): Promise<SupplementProduct[]> => {
+    const res = await apiClient.get('/supplements/products/', { params });
+    return res.data;
+  },
+  createSupplementProduct: async (data: any): Promise<SupplementProduct> => {
+    const res = await apiClient.post('/supplements/products/', data);
+    return res.data;
+  },
+  updateSupplementProduct: async (id: number, data: any): Promise<SupplementProduct> => {
+    const res = await apiClient.put(`/supplements/products/${id}/`, data);
+    return res.data;
+  },
+  deleteSupplementProduct: async (id: number) => {
+    const res = await apiClient.delete(`/supplements/products/${id}/`);
+    return res.data;
+  },
+  restockSupplementProduct: async (id: number, quantity: number, cost_price?: number) => {
+    const res = await apiClient.post(`/supplements/products/${id}/restock/`, { quantity, cost_price });
+    return res.data;
+  },
+  getSupplementSales: async (): Promise<SupplementSale[]> => {
+    const res = await apiClient.get('/supplements/sales/');
+    return res.data;
+  },
+  createSupplementSale: async (data: any): Promise<SupplementSale> => {
+    const res = await apiClient.post('/supplements/sales/', data);
+    return res.data;
+  },
+  getSupplementReceipt: async (id: number): Promise<SupplementReceiptData> => {
+    const res = await apiClient.get(`/supplements/sales/${id}/receipt/`);
+    return res.data;
+  },
+  getSupplementSummary: async (): Promise<SupplementSummary> => {
+    const res = await apiClient.get('/supplements/sales/summary/');
+    return res.data;
+  },
 };
+

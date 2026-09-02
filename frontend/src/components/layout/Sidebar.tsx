@@ -2,7 +2,7 @@ import React from 'react';
 import {
   LayoutDashboard, Users, CreditCard, CalendarCheck, Award,
   Dumbbell, Receipt, BarChart3, Settings, ShieldAlert,
-  LogOut, Flame, ChevronRight, UserPlus
+  LogOut, Flame, ChevronRight, UserPlus, ShoppingBag
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -38,6 +38,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       id: 'payments',
       label: 'Fee & Payments',
       icon: CreditCard,
+      roles: ['OWNER', 'MANAGER'],
+    },
+    {
+      id: 'supplements',
+      label: 'Supplements & Store',
+      icon: ShoppingBag,
       roles: ['OWNER', 'MANAGER'],
     },
     {

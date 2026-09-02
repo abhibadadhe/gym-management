@@ -6,7 +6,8 @@ from .views import (
     DashboardStatsView, MemberViewSet, MembershipPlanViewSet,
     PaymentViewSet, AttendanceViewSet, TrainerViewSet,
     WorkoutPlanViewSet, ExpenseViewSet, FinancialSummaryView,
-    ReportsView, AuditLogViewSet, DatabaseBackupView
+    ReportsView, AuditLogViewSet, DatabaseBackupView,
+    SupplementCategoryViewSet, SupplementProductViewSet, SupplementSaleViewSet
 )
 
 router = DefaultRouter()
@@ -18,6 +19,9 @@ router.register(r'trainers', TrainerViewSet, basename='trainer')
 router.register(r'workouts', WorkoutPlanViewSet, basename='workout')
 router.register(r'expenses', ExpenseViewSet, basename='expense')
 router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
+router.register(r'supplements/categories', SupplementCategoryViewSet, basename='supplement-category')
+router.register(r'supplements/products', SupplementProductViewSet, basename='supplement-product')
+router.register(r'supplements/sales', SupplementSaleViewSet, basename='supplement-sale')
 
 urlpatterns = [
     # Auth endpoints

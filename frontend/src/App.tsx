@@ -13,6 +13,7 @@ import { Expenses } from './pages/Expenses';
 import { Financials } from './pages/Financials';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
+import { Supplements } from './pages/Supplements';
 
 import { Modal } from './components/common/Modal';
 import { PaymentReceipt } from './components/receipts/PaymentReceipt';
@@ -172,6 +173,8 @@ const AppContent: React.FC = () => {
           }}
         />
       )}
+
+      {currentPage === 'supplements' && <Supplements />}
 
       {currentPage === 'expenses' && <Expenses />}
 

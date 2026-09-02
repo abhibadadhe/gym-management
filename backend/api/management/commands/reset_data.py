@@ -68,6 +68,21 @@ class Command(BaseCommand):
         gym_settings.receipt_prefix = "MF-REC-"
         gym_settings.save()
 
+        # 5. Ensure Default Supplement Categories are created
+        from api.models import SupplementCategory, SupplementProduct
+        categories = [
+            ("Whey Protein", "Whey isolate, concentrate, and blend protein powders"),
+            ("Creatine", "Micronized & monohydrate creatine formulas"),
+            ("Pre-Workout", "Energy boosters, pump formulas, and endurance powders"),
+            ("BCAA & EAA", "Branch-chain and essential amino acids for recovery"),
+            ("Mass Gainer", "High-calorie muscle mass and bulking formulas"),
+            ("Vitamins & Health", "Daily multivitamins, fish oil omega-3, and joint support"),
+            ("Peanut Butter & Snacks", "High-protein peanut butter, bars, and oats"),
+            ("Shakers & Gear", "Gym shakers, lifting straps, and accessories"),
+        ]
+        for cat_name, desc in categories:
+            SupplementCategory.objects.get_or_create(name=cat_name, defaults={'description': desc})
+
         self.stdout.write(
             self.style.SUCCESS(
                 "Successfully reset all data!\n"

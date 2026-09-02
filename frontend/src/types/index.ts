@@ -300,3 +300,105 @@ export interface MemberWhatsAppTemplates {
     birthday: WhatsAppTemplateItem;
   };
 }
+
+// Supplements & Store Types
+export interface SupplementCategory {
+  id: number;
+  name: string;
+  description: string;
+  products_count?: number;
+  created_at?: string;
+}
+
+export interface SupplementProduct {
+  id: number;
+  name: string;
+  brand: string;
+  category?: number | null;
+  category_name?: string;
+  flavor?: string;
+  weight_or_servings?: string;
+  cost_price: number | string;
+  selling_price: number | string;
+  stock_quantity: number;
+  min_stock_alert: number;
+  is_low_stock?: boolean;
+  expiry_date?: string | null;
+  image?: string | null;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SupplementSaleItem {
+  id?: number;
+  product?: number;
+  product_name: string;
+  product_brand?: string;
+  quantity: number;
+  unit_price: number;
+  cost_price?: number;
+  subtotal: number;
+}
+
+export interface SupplementSale {
+  id: number;
+  invoice_number: string;
+  member?: number | null;
+  customer_name: string;
+  customer_phone?: string;
+  subtotal: number;
+  discount: number;
+  final_amount: number;
+  payment_method: string;
+  payment_method_display?: string;
+  sold_by?: number | null;
+  sold_by_name?: string;
+  sale_date: string;
+  notes?: string;
+  items: SupplementSaleItem[];
+  created_at?: string;
+}
+
+export interface SupplementSummary {
+  total_products: number;
+  low_stock_count: number;
+  total_inventory_cost: number;
+  total_retail_valuation: number;
+  today_sales: number;
+  monthly_sales: number;
+  lifetime_sales: number;
+}
+
+export interface SupplementReceiptData {
+  gym: {
+    name: string;
+    tagline: string;
+    address: string;
+    phone: string;
+    email: string;
+    upi_id: string;
+  };
+  invoice_number: string;
+  sale_date: string;
+  date: string;
+  time: string;
+  customer_name: string;
+  customer_phone: string;
+  member_id?: string | null;
+  items: {
+    id: number;
+    name: string;
+    brand: string;
+    quantity: number;
+    unit_price: number;
+    subtotal: number;
+  }[];
+  subtotal: number;
+  discount: number;
+  final_amount: number;
+  payment_method: string;
+  sold_by: string;
+  notes?: string;
+}
+
