@@ -34,6 +34,10 @@ services:
       DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-*}
       DATABASE_URL: postgres://${POSTGRES_USER:-morya_admin}:${POSTGRES_PASSWORD:-MoryaFitnessStrongPassword2026!}@postgres_db:5432/${POSTGRES_DB:-morya_fitness_db}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-}
+
     volumes:
       - media_volume:/app/media
       - static_volume:/app/staticfiles
