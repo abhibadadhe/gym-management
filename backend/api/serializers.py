@@ -215,29 +215,67 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
 class AddMemberWithMembershipSerializer(serializers.Serializer):
     # Personal Info
-    first_name = serializers.CharField(max_length=100)
-    last_name = serializers.CharField(max_length=100)
+    full_name = serializers.CharField(max_length=200, required=False)
+    first_name = serializers.CharField(max_length=100, required=False)
+    last_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
     phone = serializers.CharField(max_length=20)
-    email = serializers.EmailField(required=False, allow_blank=True)
-    dob = serializers.DateField(required=False, allow_null=True)
-    gender = serializers.ChoiceField(choices=Member.GENDER_CHOICES, default='MALE')
-    address = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=True)
+    dob = serializers.DateField(required=True)
+    gender = serializers.ChoiceField(choices=Member.GENDER_CHOICES, required=True)
+    address = serializers.CharField(required=True)
     emergency_contact_name = serializers.CharField(required=False, allow_blank=True)
-    emergency_contact_phone = serializers.CharField(required=False, allow_blank=True)
-    source = serializers.ChoiceField(choices=Member.SOURCE_CHOICES, default='WALK_IN')
-    joining_date = serializers.DateField(default=date.today)
+    emergency_contact_phone = serializers.CharField(max_length=20, required=True)
+    source = serializers.ChoiceField(choices=Member.SOURCE_CHOICES, default='WALK_IN', required=False)
+    joining_date = serializers.DateField(default=date.today, required=False)
     assigned_trainer_id = serializers.IntegerField(required=False, allow_null=True)
     notes = serializers.CharField(required=False, allow_blank=True)
 
     # Membership Plan Info
     plan_id = serializers.IntegerField()
-    start_date = serializers.DateField(default=date.today)
-    discount = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    start_date = serializers.DateField(default=date.today, required=False)
+    discount = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00, required=False)
     
     # Payment Info
-    paid_amount = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    payment_method = serializers.ChoiceField(choices=Payment.PAYMENT_METHOD_CHOICES, default='UPI')
+    paid_amount = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00, required=False)
+    payment_method = serializers.CharField(default='UPI', required=False)
     transaction_ref = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        full_name = attrs.get('full_name', '').strip()
+        first_name = attrs.get('first_name', '').strip()
+        last_name = attrs.get('last_name', '').strip()
+
+        if full_name:
+            parts = full_name.split(' ', 1)
+            attrs['first_name'] = parts[0]
+            attrs['last_name'] = parts[1] if len(parts) > 1 else ''
+        elif not first_name:
+            raise serializers.ValidationError({"full_name": "Full name is required."})
+
+        return attrs
+
+
+class MemberUpdateSerializer(serializers.ModelSerializer):
+    full_name = serializers.CharField(max_length=200, required=False)
+
+    class Meta:
+        model = Member
+        fields = [
+            'id', 'member_id', 'full_name', 'first_name', 'last_name',
+            'phone', 'email', 'gender', 'dob', 'address', 'photo',
+            'emergency_contact_name', 'emergency_contact_phone',
+            'source', 'joining_date', 'assigned_trainer', 'notes', 'is_active'
+        ]
+        read_only_fields = ['id', 'member_id']
+
+    def update(self, instance, validated_data):
+        full_name = validated_data.pop('full_name', None)
+        if full_name is not None:
+            parts = full_name.strip().split(' ', 1)
+            instance.first_name = parts[0]
+            instance.last_name = parts[1] if len(parts) > 1 else ''
+
+        return super().update(instance, validated_data)
 
 
 class RenewMembershipSerializer(serializers.Serializer):

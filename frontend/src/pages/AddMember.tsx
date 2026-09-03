@@ -20,8 +20,7 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
 
   // Form State
   const [formData, setFormData] = useState({
-    first_name: '',
-    last_name: '',
+    full_name: '',
     phone: '',
     email: '',
     gender: 'MALE',
@@ -90,13 +89,18 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.first_name || !formData.last_name || !formData.phone || !formData.plan_id) {
-      setErrorMsg('Please fill in Member Name, 10-digit Phone number, and select a Plan.');
+    if (!formData.full_name.trim() || !formData.phone.trim() || !formData.email.trim() || !formData.dob || !formData.gender || !formData.address.trim() || !formData.emergency_contact_phone.trim() || !formData.plan_id) {
+      setErrorMsg('Please fill in all mandatory fields: Full Name, Phone number, Email address, DOB, Gender, Address, Emergency contact no, and Plan.');
       return;
     }
 
-    if (formData.phone.length < 10) {
+    if (formData.phone.trim().length < 10) {
       setErrorMsg('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    if (formData.emergency_contact_phone.trim().length < 10) {
+      setErrorMsg('Please enter a valid 10-digit emergency contact phone number.');
       return;
     }
 
@@ -105,14 +109,13 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
 
     try {
       const payload = {
-        first_name: formData.first_name.trim(),
-        last_name: formData.last_name.trim(),
+        full_name: formData.full_name.trim(),
         phone: formData.phone.trim(),
         email: formData.email.trim(),
         gender: formData.gender,
-        dob: formData.dob || null,
+        dob: formData.dob,
         address: formData.address.trim(),
-        emergency_contact_name: formData.emergency_contact_name.trim(),
+        emergency_contact_name: formData.emergency_contact_name.trim() || 'Emergency Contact',
         emergency_contact_phone: formData.emergency_contact_phone.trim(),
         source: formData.source,
         joining_date: formData.joining_date,
@@ -204,30 +207,16 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div>
+              <div className="sm:col-span-2">
                 <label className="block text-slate-700 font-semibold mb-1">
-                  First Name <span className="text-rose-600">*</span>
+                  Full Name <span className="text-rose-600">*</span>
                 </label>
                 <input
                   type="text"
-                  value={formData.first_name}
-                  onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                  placeholder="e.g. Sachin"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-semibold mb-1">
-                  Last Name <span className="text-rose-600">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.last_name}
-                  onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                  placeholder="e.g. Jadhav"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white"
+                  value={formData.full_name}
+                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                  placeholder="e.g. Sachin Ramesh Jadhav"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white font-medium"
                   required
                 />
               </div>
@@ -253,32 +242,41 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
               </div>
 
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">Email Address</label>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Email Address <span className="text-rose-600">*</span>
+                </label>
                 <input
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="sachin.j@gmail.com"
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white"
+                  required
                 />
               </div>
 
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">Date of Birth</label>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Date of Birth <span className="text-rose-600">*</span>
+                </label>
                 <input
                   type="date"
                   value={formData.dob}
                   onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
+                  required
                 />
               </div>
 
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">Gender</label>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Gender <span className="text-rose-600">*</span>
+                </label>
                 <select
                   value={formData.gender}
                   onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
+                  required
                 >
                   <option value="MALE">Male</option>
                   <option value="FEMALE">Female</option>
@@ -287,34 +285,43 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="block text-slate-700 font-semibold mb-1">Residential Address (Sinnar / Area)</label>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Residential Address (Sinnar / Area) <span className="text-rose-600">*</span>
+                </label>
                 <input
                   type="text"
                   value={formData.address}
                   onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                   placeholder="e.g. Near Shiv Smarak, Sinnar"
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white"
+                  required
                 />
               </div>
 
               <div>
-                <label className="block text-slate-700 font-semibold mb-1">Emergency Contact Name</label>
-                <input
-                  type="text"
-                  value={formData.emergency_contact_name}
-                  onChange={(e) => setFormData({ ...formData, emergency_contact_name: e.target.value })}
-                  placeholder="Father / Spouse / Friend"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-semibold mb-1">Emergency Contact Phone</label>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Emergency Contact Phone <span className="text-rose-600">*</span>
+                </label>
                 <input
                   type="tel"
                   value={formData.emergency_contact_phone}
                   onChange={(e) => setFormData({ ...formData, emergency_contact_phone: e.target.value })}
                   placeholder="9822000000"
+                  maxLength={10}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Emergency Contact Name / Relation <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.emergency_contact_name}
+                  onChange={(e) => setFormData({ ...formData, emergency_contact_name: e.target.value })}
+                  placeholder="Father / Spouse / Friend"
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white"
                 />
               </div>
@@ -456,12 +463,10 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
                 <select
                   value={formData.payment_method}
                   onChange={(e) => setFormData({ ...formData, payment_method: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white font-bold"
                 >
-                  <option value="UPI">UPI (GPay / PhonePe / Paytm / QR)</option>
-                  <option value="CASH">Cash at Reception</option>
-                  <option value="CARD">Debit / Credit Card</option>
-                  <option value="BANK_TRANSFER">Bank Transfer / NEFT</option>
+                  <option value="UPI">UPI</option>
+                  <option value="CASH">Cash</option>
                 </select>
               </div>
 

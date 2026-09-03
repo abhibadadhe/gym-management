@@ -96,7 +96,7 @@ class Member(models.Model):
 
     member_id = models.CharField(max_length=30, unique=True, db_index=True)
     first_name = models.CharField(max_length=100)
-    last_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100, blank=True)
     phone = models.CharField(max_length=20, db_index=True)
     email = models.EmailField(blank=True)
     dob = models.DateField(null=True, blank=True)

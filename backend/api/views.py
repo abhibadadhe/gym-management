@@ -26,6 +26,7 @@ from .serializers import (
     MemberMembershipSerializer, PaymentSerializer, AttendanceSerializer,
     WorkoutPlanSerializer, WorkoutExerciseSerializer, ExpenseSerializer,
     AuditLogSerializer, AddMemberWithMembershipSerializer,
+    MemberUpdateSerializer,
     RenewMembershipSerializer, QuickPaymentSerializer,
     AttendanceCheckInSerializer,
     SupplementCategorySerializer, SupplementProductSerializer,
@@ -250,7 +251,19 @@ class MemberViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'retrieve':
             return MemberDetailSerializer
+        elif self.action in ['update', 'partial_update']:
+            return MemberUpdateSerializer
         return MemberListSerializer
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        log_audit(
+            self.request.user,
+            'MEMBER_UPDATED',
+            'MEMBER',
+            instance.id,
+            f"Updated member profile {instance.full_name} ({instance.member_id})"
+        )
 
     def get_queryset(self):
         qs = Member.objects.filter(is_active=True).prefetch_related('memberships', 'memberships__plan', 'assigned_trainer')
@@ -320,10 +333,11 @@ class MemberViewSet(viewsets.ModelViewSet):
         )
 
         # 2. Create Membership
-        price = plan.price
-        discount = data.get('discount', Decimal('0.00'))
+        price = Decimal(str(plan.price))
+        discount = Decimal(str(data.get('discount') or '0.00'))
         final_amount = max(Decimal('0.00'), price - discount)
-        paid_amount = min(final_amount, data.get('paid_amount', Decimal('0.00')))
+        raw_paid = Decimal(str(data.get('paid_amount') or '0.00'))
+        paid_amount = min(final_amount, raw_paid)
         pending_amount = max(Decimal('0.00'), final_amount - paid_amount)
 
         membership = MemberMembership.objects.create(
@@ -392,10 +406,11 @@ class MemberViewSet(viewsets.ModelViewSet):
 
         new_end_date = new_start_date + timedelta(days=plan.duration_days)
 
-        price = plan.price
-        discount = data.get('discount', Decimal('0.00'))
+        price = Decimal(str(plan.price))
+        discount = Decimal(str(data.get('discount') or '0.00'))
         final_amount = max(Decimal('0.00'), price - discount)
-        paid_amount = min(final_amount, data.get('paid_amount', Decimal('0.00')))
+        raw_paid = Decimal(str(data.get('paid_amount') or '0.00'))
+        paid_amount = min(final_amount, raw_paid)
         pending_amount = max(Decimal('0.00'), final_amount - paid_amount)
 
         # Create new renewal subscription (never overwrite historical records)

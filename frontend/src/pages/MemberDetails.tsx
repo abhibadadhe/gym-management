@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, RefreshCw, MessageSquare, CreditCard,
   Phone, Mail, MapPin, Calendar, Clock,
-  Receipt, Plus, Trash2, CheckCircle
+  Receipt, Plus, Trash2, CheckCircle, Edit3, AlertTriangle
 } from 'lucide-react';
 import { Member, ReceiptData } from '../types';
 import { api } from '../services/api';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { Modal } from '../components/common/Modal';
 
 interface MemberDetailsProps {
   memberId: number;
@@ -30,6 +31,86 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
   const [activeTab, setActiveTab] = useState<
     'overview' | 'memberships' | 'payments' | 'notes'
   >('overview');
+
+  // Edit & Delete Modals
+  const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
+  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const [editForm, setEditForm] = useState({
+    full_name: '',
+    phone: '',
+    email: '',
+    dob: '',
+    gender: 'MALE',
+    address: '',
+    emergency_contact_name: '',
+    emergency_contact_phone: '',
+    notes: '',
+  });
+
+  const handleOpenEdit = () => {
+    if (!member) return;
+    setEditForm({
+      full_name: member.full_name || '',
+      phone: member.phone || '',
+      email: member.email || '',
+      dob: member.dob || '',
+      gender: member.gender || 'MALE',
+      address: member.address || '',
+      emergency_contact_name: member.emergency_contact_name || '',
+      emergency_contact_phone: member.emergency_contact_phone || '',
+      notes: member.notes || '',
+    });
+    setEditError(null);
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!member) return;
+    if (!editForm.full_name.trim() || !editForm.phone.trim() || !editForm.email.trim() || !editForm.dob || !editForm.gender || !editForm.address.trim() || !editForm.emergency_contact_phone.trim()) {
+      setEditError('Please fill in all compulsory fields (Full Name, Phone, Email, DOB, Gender, Address, Emergency Phone).');
+      return;
+    }
+
+    setIsUpdating(true);
+    setEditError(null);
+    try {
+      const updated = await api.updateMember(member.id, {
+        full_name: editForm.full_name.trim(),
+        phone: editForm.phone.trim(),
+        email: editForm.email.trim(),
+        dob: editForm.dob,
+        gender: editForm.gender,
+        address: editForm.address.trim(),
+        emergency_contact_name: editForm.emergency_contact_name.trim() || 'Emergency Contact',
+        emergency_contact_phone: editForm.emergency_contact_phone.trim(),
+        notes: editForm.notes.trim(),
+      });
+      setMember(updated);
+      setIsEditModalOpen(false);
+    } catch (err: any) {
+      setEditError(err.response?.data?.detail || 'Failed to update member information.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!member) return;
+    setIsDeleting(true);
+    try {
+      await api.deleteMember(member.id);
+      setIsDeleteModalOpen(false);
+      onBack();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Failed to delete member.');
+      setIsDeleting(false);
+    }
+  };
 
   const fetchMember = async () => {
     setIsLoading(true);
@@ -88,6 +169,24 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
           >
             <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
             <span>WhatsApp</span>
+          </button>
+
+          <button
+            onClick={handleOpenEdit}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all shadow-sm border border-slate-200"
+            title="Edit Member Information"
+          >
+            <Edit3 className="w-3.5 h-3.5 text-slate-600" />
+            <span>Edit Profile</span>
+          </button>
+
+          <button
+            onClick={() => setIsDeleteModalOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all shadow-sm"
+            title="Delete Member"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+            <span>Delete</span>
           </button>
 
           <button
@@ -374,6 +473,201 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
           </p>
         </div>
       )}
+
+      {/* Edit Member Modal */}
+      <Modal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        title="Edit Member Information"
+        subtitle={`Member ID: ${member.member_id}`}
+        maxWidth="2xl"
+      >
+        <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+          {editError && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <span>{editError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
+              <label className="block text-slate-700 font-semibold mb-1">
+                Full Name <span className="text-rose-600">*</span>
+              </label>
+              <input
+                type="text"
+                value={editForm.full_name}
+                onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
+                required
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-medium"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">
+                Mobile Number <span className="text-rose-600">*</span>
+              </label>
+              <input
+                type="tel"
+                value={editForm.phone}
+                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                maxLength={10}
+                required
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono focus:outline-none focus:border-orange-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">
+                Email Address <span className="text-rose-600">*</span>
+              </label>
+              <input
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                required
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">
+                Date of Birth <span className="text-rose-600">*</span>
+              </label>
+              <input
+                type="date"
+                value={editForm.dob}
+                onChange={(e) => setEditForm({ ...editForm, dob: e.target.value })}
+                required
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">
+                Gender <span className="text-rose-600">*</span>
+              </label>
+              <select
+                value={editForm.gender}
+                onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
+                required
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+              >
+                <option value="MALE">Male</option>
+                <option value="FEMALE">Female</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-slate-700 font-semibold mb-1">
+                Residential Address <span className="text-rose-600">*</span>
+              </label>
+              <input
+                type="text"
+                value={editForm.address}
+                onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                required
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">
+                Emergency Contact Phone <span className="text-rose-600">*</span>
+              </label>
+              <input
+                type="tel"
+                value={editForm.emergency_contact_phone}
+                onChange={(e) => setEditForm({ ...editForm, emergency_contact_phone: e.target.value })}
+                maxLength={10}
+                required
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono focus:outline-none focus:border-orange-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">
+                Emergency Contact Name / Relation
+              </label>
+              <input
+                type="text"
+                value={editForm.emergency_contact_name}
+                onChange={(e) => setEditForm({ ...editForm, emergency_contact_name: e.target.value })}
+                placeholder="Father / Spouse"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-slate-700 font-semibold mb-1">Notes / Remarks</label>
+              <textarea
+                value={editForm.notes}
+                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                rows={2}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setIsEditModalOpen(false)}
+              className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isUpdating}
+              className="px-5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold shadow-md shadow-orange-500/20 disabled:opacity-50"
+            >
+              {isUpdating ? 'Saving Changes...' : 'Save Changes'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Delete Member Confirmation Modal */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        title="Delete Member Profile"
+        subtitle={`Member: ${member.full_name} (${member.member_id})`}
+        maxWidth="md"
+      >
+        <div className="space-y-4 text-xs text-slate-700">
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 space-y-1">
+            <div className="flex items-center gap-2 font-bold text-sm text-rose-900">
+              <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+              <span>Are you sure you want to delete this member?</span>
+            </div>
+            <p className="text-[11px] text-rose-700 pl-7">
+              This will remove <strong>{member.full_name}</strong> ({member.member_id}) from the active registry. All attendance records and historical payments will remain preserved in audit logs.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setIsDeleteModalOpen(false)}
+              className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmDelete}
+              disabled={isDeleting}
+              className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md shadow-rose-500/20 disabled:opacity-50"
+            >
+              {isDeleting ? 'Deleting...' : 'Yes, Delete Member'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Search, UserPlus, RefreshCw, Eye, MessageSquare,
-  CreditCard, ChevronRight, CheckCircle2
+  CreditCard, ChevronRight, CheckCircle2, Trash2
 } from 'lucide-react';
 import { Member } from '../types';
 import { api } from '../services/api';
@@ -249,13 +249,31 @@ export const Members: React.FC<MembersProps> = ({
                         <RefreshCw className="w-3.5 h-3.5" />
                       </button>
 
-                      {/* View Details */}
+                      {/* View Details / Edit */}
                       <button
                         onClick={() => onSelectMember(member.id)}
                         className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-                        title="View Full Profile"
+                        title="View & Edit Profile"
                       >
                         <Eye className="w-3.5 h-3.5" />
+                      </button>
+
+                      {/* Delete */}
+                      <button
+                        onClick={async () => {
+                          if (window.confirm(`Are you sure you want to delete member ${member.full_name} (${member.member_id})?`)) {
+                            try {
+                              await api.deleteMember(member.id);
+                              fetchMembers();
+                            } catch (err: any) {
+                              alert(err.response?.data?.detail || 'Failed to delete member.');
+                            }
+                          }
+                        }}
+                        className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition-colors"
+                        title="Delete Member"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </td>

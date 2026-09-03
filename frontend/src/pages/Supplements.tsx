@@ -807,12 +807,10 @@ export const Supplements: React.FC = () => {
                   <select
                     value={paymentMethod}
                     onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
                   >
-                    <option value="UPI">UPI / GPay / PhonePe / Paytm</option>
-                    <option value="CASH">Cash Payment</option>
-                    <option value="CARD">Credit / Debit Card</option>
-                    <option value="NETBANKING">Net Banking Transfer</option>
+                    <option value="UPI">UPI</option>
+                    <option value="CASH">Cash</option>
                   </select>
                 </div>
 

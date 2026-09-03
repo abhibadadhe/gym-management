@@ -341,12 +341,10 @@ export const RenewMembership: React.FC<RenewMembershipProps> = ({
               <select
                 value={paymentMethod}
                 onChange={(e) => setPaymentMethod(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white font-bold"
               >
-                <option value="UPI">UPI (GPay / PhonePe / Paytm / QR)</option>
-                <option value="CASH">Cash at Reception</option>
-                <option value="CARD">Debit / Credit Card</option>
-                <option value="BANK_TRANSFER">Bank Transfer / NEFT</option>
+                <option value="UPI">UPI</option>
+                <option value="CASH">Cash</option>
               </select>
             </div>
             <div>
