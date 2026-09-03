@@ -1,6 +1,10 @@
-import React from 'react';
-import { Printer, MapPin, Phone, CheckCircle2, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  Printer, MapPin, Phone, CheckCircle2, AlertCircle,
+  MessageSquare, RefreshCw
+} from 'lucide-react';
 import { ReceiptData } from '../../types';
+import { api } from '../../services/api';
 
 interface PaymentReceiptProps {
   receipt: any;
@@ -18,7 +22,7 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
   // Safe Gym Properties
   const gymName = receipt.gym?.name || 'Morya Fitness';
   const gymTagline = receipt.gym?.tagline || 'Premium Gym & Fitness Center';
-  const gymAddress = receipt.gym?.address || 'Near Shiv Smarak, Sinnar, Nashik, Maharashtra 422103';
+  const gymAddress = receipt.gym?.address || 'Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103';
   const gymPhone = receipt.gym?.phone || '+91 98220 12345';
   const gymUpi = receipt.gym?.upi_id || 'moryafitness@okhdfcbank';
 
@@ -85,6 +89,91 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
     receipt.plan?.pending_amount ??
     Math.max(0, finalPayable - amountPaid)
   );
+
+  const [isSending, setIsSending] = useState(false);
+
+  const handleSendWhatsApp = async () => {
+    setIsSending(true);
+    try {
+      const rawPhone = memberPhone || receipt.member?.phone || '';
+      const cleanPhone = String(rawPhone).replace(/\D/g, '');
+      const phoneWithCountry = cleanPhone.startsWith('91') && cleanPhone.length === 12
+        ? cleanPhone
+        : cleanPhone.length === 10
+          ? `91${cleanPhone}`
+          : cleanPhone;
+
+      const origin = window.location.origin;
+      const pdfUrl = `${origin}/api/public/receipts/${encodeURIComponent(receiptNo)}/pdf/`;
+
+      const message = `🏋️‍♂️ *${gymName.toUpperCase()} — OFFICIAL FEE RECEIPT*\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `Dear *${memberName}*,\n\n` +
+        `Thank you for your payment at *${gymName}*! Here are your official fee receipt details:\n\n` +
+        `📄 *Receipt No:* ${receiptNo}\n` +
+        `📅 *Date:* ${formattedDate}\n` +
+        `💪 *Plan:* ${planName} (${durationDays} Days)\n` +
+        `💳 *Payment Mode:* ${paymentMethod}\n` +
+        (transactionRef ? `🔖 *Ref / UTR:* ${transactionRef}\n` : '') +
+        `💰 *Amount Paid:* ₹${amountPaid.toLocaleString('en-IN')}\n` +
+        (remainingDues > 0
+          ? `⚠️ *Balance Dues Remaining:* ₹${remainingDues.toLocaleString('en-IN')}\n`
+          : `✅ *Payment Status:* Settled in Full\n`) +
+        `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `📍 *Address:* ${gymAddress}\n` +
+        `📞 *Helpdesk:* ${gymPhone}\n\n` +
+        `_Welcome to ${gymName}! Stay consistent & achieve your fitness goals!_ 🏆`;
+
+      const paymentId = receipt.id || receipt.payment?.id;
+      if (paymentId) {
+        try {
+          const blob = await api.getReceiptPdf(paymentId);
+          const fileName = `Receipt_${receiptNo}.pdf`;
+          const file = new File([blob], fileName, { type: 'application/pdf' });
+
+          // 1. Mobile & Web Share API support (Android, iOS)
+          // Directly attaches the PDF document file into WhatsApp!
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+              await navigator.share({
+                files: [file],
+                title: `Fee Receipt - ${receiptNo}`,
+                text: message,
+              });
+              return;
+            } catch (shareErr: any) {
+              if (shareErr.name === 'AbortError') return;
+              console.warn('Native share failed, proceeding with desktop fallback:', shareErr);
+            }
+          } else {
+            // 2. Desktop Fallback:
+            // Auto-downloads the PDF file so user has the file right in Downloads
+            const url = window.URL.createObjectURL(file);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+          }
+        } catch (e) {
+          console.warn('PDF fetch error:', e);
+        }
+      }
+
+      // Open WhatsApp chat directly with prefilled message containing direct PDF link
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const encodedText = encodeURIComponent(message);
+      const whatsappUrl = isMobile
+        ? `https://api.whatsapp.com/send?phone=${phoneWithCountry}&text=${encodedText}`
+        : `https://web.whatsapp.com/send?phone=${phoneWithCountry}&text=${encodedText}`;
+
+      window.open(whatsappUrl, '_blank');
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   const handlePrint = () => {
     const printWindow = window.open('', '_blank', 'width=800,height=900');
@@ -634,13 +723,27 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
       </div>
 
       {/* Action Buttons */}
-      <div className="flex justify-end gap-3 max-w-2xl mx-auto">
+      <div className="flex items-center justify-end gap-3 max-w-2xl mx-auto flex-wrap">
+        <button
+          onClick={handleSendWhatsApp}
+          disabled={isSending}
+          className="py-2.5 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 transition-all flex items-center gap-2 disabled:opacity-60"
+          title="Send PDF Receipt to WhatsApp"
+        >
+          {isSending ? (
+            <RefreshCw className="w-4 h-4 animate-spin" />
+          ) : (
+            <MessageSquare className="w-4 h-4" />
+          )}
+          <span>{isSending ? 'Preparing PDF...' : 'Send to WhatsApp'}</span>
+        </button>
+
         <button
           onClick={handlePrint}
-          className="py-2.5 px-5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center gap-2"
+          className="py-2.5 px-4 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center gap-2"
         >
           <Printer className="w-4 h-4" />
-          <span>Print Receipt</span>
+          <span>Print</span>
         </button>
         {onClose && (
           <button

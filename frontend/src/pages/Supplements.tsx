@@ -13,6 +13,7 @@ import {
 import { api } from '../services/api';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { SupplementReceiptModal } from '../components/receipts/SupplementReceiptModal';
+import { Modal } from '../components/common/Modal';
 
 export const Supplements: React.FC = () => {
   // Data States
@@ -33,8 +34,16 @@ export const Supplements: React.FC = () => {
   const [isAddProductOpen, setIsAddProductOpen] = useState<boolean>(false);
   const [isRestockOpen, setIsRestockOpen] = useState<boolean>(false);
   const [isNewSaleOpen, setIsNewSaleOpen] = useState<boolean>(false);
+  const [isAddCategoryOpen, setIsAddCategoryOpen] = useState<boolean>(false);
   const [selectedProductForRestock, setSelectedProductForRestock] = useState<SupplementProduct | null>(null);
   const [activeReceipt, setActiveReceipt] = useState<SupplementReceiptData | null>(null);
+
+  // Form States: New Category
+  const [categoryName, setCategoryName] = useState<string>('');
+  const [categoryDesc, setCategoryDesc] = useState<string>('');
+  const [isSubmittingCategory, setIsSubmittingCategory] = useState<boolean>(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [categorySuccess, setCategorySuccess] = useState<string | null>(null);
 
   // Form States: New Product
   const [productForm, setProductForm] = useState({
@@ -48,6 +57,31 @@ export const Supplements: React.FC = () => {
     stock_quantity: '10',
     min_stock_alert: '3',
   });
+
+  // Form States: Edit Product
+  const [isEditProductOpen, setIsEditProductOpen] = useState<boolean>(false);
+  const [editingProductId, setEditingProductId] = useState<number | null>(null);
+  const [editProductForm, setEditProductForm] = useState({
+    name: '',
+    brand: '',
+    category: '',
+    flavor: '',
+    weight_or_servings: '',
+    cost_price: '',
+    selling_price: '',
+    stock_quantity: '',
+    min_stock_alert: '',
+  });
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState<boolean>(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  // Toast Notification State
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  // In-App Delete Confirmation States (replacing browser window.confirm)
+  const [productToDelete, setProductToDelete] = useState<SupplementProduct | null>(null);
+  const [categoryToDelete, setCategoryToDelete] = useState<{ id: number; name: string } | null>(null);
+  const [isDeletingItem, setIsDeletingItem] = useState<boolean>(false);
 
   // Form States: Restock
   const [restockQty, setRestockQty] = useState<string>('5');
@@ -138,8 +172,17 @@ export const Supplements: React.FC = () => {
         min_stock_alert: '3',
       });
       loadData();
+      setToast({
+        message: `Product "${productForm.name}" was successfully added!`,
+        type: 'success',
+      });
+      setTimeout(() => setToast(null), 4000);
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to create product.');
+      setToast({
+        message: err.response?.data?.error || 'Failed to create product.',
+        type: 'error',
+      });
+      setTimeout(() => setToast(null), 4000);
     }
   };
 
@@ -150,14 +193,24 @@ export const Supplements: React.FC = () => {
     try {
       const qty = parseInt(restockQty) || 0;
       const cost = restockCost ? parseFloat(restockCost) : undefined;
+      const prodName = selectedProductForRestock.name;
       await api.restockSupplementProduct(selectedProductForRestock.id, qty, cost);
       setIsRestockOpen(false);
       setSelectedProductForRestock(null);
       setRestockQty('5');
       setRestockCost('');
       loadData();
+      setToast({
+        message: `Restocked ${qty} units of "${prodName}"!`,
+        type: 'success',
+      });
+      setTimeout(() => setToast(null), 4000);
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Failed to restock product.');
+      setToast({
+        message: err.response?.data?.error || 'Failed to restock product.',
+        type: 'error',
+      });
+      setTimeout(() => setToast(null), 4000);
     }
   };
 
@@ -228,10 +281,14 @@ export const Supplements: React.FC = () => {
         discount: parseFloat(discountAmount) || 0,
         payment_method: paymentMethod,
         notes: saleNotes,
-        items: validItems.map((it) => ({
-          product: it.productId,
-          quantity: it.quantity,
-        })),
+        items: validItems.map((it) => {
+          const prod = products.find((p) => p.id === it.productId);
+          return {
+            product: it.productId,
+            quantity: it.quantity,
+            unit_price: prod ? parseFloat(prod.selling_price as any) : 0,
+          };
+        }),
       };
 
       const createdSale = await api.createSupplementSale(payload);
@@ -241,8 +298,46 @@ export const Supplements: React.FC = () => {
       resetSaleForm();
       loadData();
       setActiveReceipt(receiptData);
+      setToast({
+        message: `Sale invoice #${createdSale.invoice_number || ''} recorded successfully!`,
+        type: 'success',
+      });
+      setTimeout(() => setToast(null), 4000);
     } catch (err: any) {
-      setSaleError(err.response?.data?.items || err.response?.data?.detail || 'Failed to record sale.');
+      const data = err.response?.data;
+      let errorMsg = 'Failed to record sale.';
+      if (typeof data === 'string') {
+        errorMsg = data;
+      } else if (data?.detail && typeof data.detail === 'string') {
+        errorMsg = data.detail;
+      } else if (data?.items) {
+        if (typeof data.items === 'string') {
+          errorMsg = data.items;
+        } else if (Array.isArray(data.items)) {
+          const firstErr = data.items[0];
+          if (typeof firstErr === 'string') {
+            errorMsg = firstErr;
+          } else if (typeof firstErr === 'object' && firstErr !== null) {
+            const firstKey = Object.keys(firstErr)[0];
+            const val = firstErr[firstKey];
+            errorMsg = Array.isArray(val) ? `${firstKey}: ${val[0]}` : String(val);
+          }
+        } else if (typeof data.items === 'object') {
+          const firstKey = Object.keys(data.items)[0];
+          const val = data.items[firstKey];
+          errorMsg = Array.isArray(val) ? val[0] : (typeof val === 'object' ? JSON.stringify(val) : String(val));
+        }
+      } else if (data && typeof data === 'object') {
+        const firstKey = Object.keys(data)[0];
+        const val = data[firstKey];
+        errorMsg = Array.isArray(val) ? `${firstKey}: ${val[0]}` : String(val);
+      }
+      setSaleError(errorMsg);
+      setToast({
+        message: errorMsg,
+        type: 'error',
+      });
+      setTimeout(() => setToast(null), 4000);
     } finally {
       setIsSubmittingSale(false);
     }
@@ -260,12 +355,155 @@ export const Supplements: React.FC = () => {
     setSaleError(null);
   };
 
+  const handleAddCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!categoryName.trim()) {
+      setCategoryError('Category name is required.');
+      return;
+    }
+    setIsSubmittingCategory(true);
+    setCategoryError(null);
+    try {
+      const newCat = await api.createSupplementCategory({
+        name: categoryName.trim(),
+        description: categoryDesc.trim(),
+      });
+      const updatedCats = await api.getSupplementCategories();
+      setCategories(updatedCats);
+      setSelectedCategory(newCat.id.toString());
+      setProductForm((prev) => ({ ...prev, category: newCat.id.toString() }));
+      setCategoryName('');
+      setCategoryDesc('');
+      setCategorySuccess(`Category "${newCat.name}" added successfully!`);
+      setTimeout(() => {
+        setCategorySuccess(null);
+        setIsAddCategoryOpen(false);
+      }, 1000);
+    } catch (err: any) {
+      setCategoryError(err.response?.data?.name?.[0] || err.response?.data?.detail || 'Failed to create category.');
+    } finally {
+      setIsSubmittingCategory(false);
+    }
+  };
+
+  const handleConfirmDeleteCategory = async () => {
+    if (!categoryToDelete) return;
+    setIsDeletingItem(true);
+    try {
+      const catName = categoryToDelete.name;
+      const catId = categoryToDelete.id;
+      await api.deleteSupplementCategory(catId);
+      const updatedCats = await api.getSupplementCategories();
+      setCategories(updatedCats);
+      if (selectedCategory === catId.toString()) {
+        setSelectedCategory('ALL');
+      }
+      setCategoryToDelete(null);
+      setIsAddCategoryOpen(false);
+      loadData();
+      setToast({
+        message: `Category "${catName}" was successfully deleted.`,
+        type: 'success',
+      });
+      setTimeout(() => setToast(null), 4000);
+    } catch (err: any) {
+      setToast({
+        message: err.response?.data?.detail || 'Failed to delete category.',
+        type: 'error',
+      });
+      setTimeout(() => setToast(null), 4000);
+    } finally {
+      setIsDeletingItem(false);
+    }
+  };
+
   const handlePrintPastReceipt = async (saleId: number) => {
     try {
       const receipt = await api.getSupplementReceipt(saleId);
       setActiveReceipt(receipt);
     } catch (err) {
-      alert('Failed to load receipt details.');
+      setToast({
+        message: 'Failed to load receipt details.',
+        type: 'error',
+      });
+      setTimeout(() => setToast(null), 4000);
+    }
+  };
+
+  const handleOpenEditProduct = (p: SupplementProduct) => {
+    setEditingProductId(p.id);
+    setEditProductForm({
+      name: p.name,
+      brand: p.brand || '',
+      category: p.category ? p.category.toString() : '',
+      flavor: p.flavor || '',
+      weight_or_servings: p.weight_or_servings || '',
+      cost_price: p.cost_price.toString(),
+      selling_price: p.selling_price.toString(),
+      stock_quantity: p.stock_quantity.toString(),
+      min_stock_alert: p.min_stock_alert.toString(),
+    });
+    setEditError(null);
+    setIsEditProductOpen(true);
+  };
+
+  const handleUpdateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingProductId) return;
+    setIsSubmittingEdit(true);
+    setEditError(null);
+    try {
+      const payload: any = {
+        name: editProductForm.name.trim(),
+        brand: editProductForm.brand.trim(),
+        flavor: editProductForm.flavor.trim(),
+        weight_or_servings: editProductForm.weight_or_servings.trim(),
+        cost_price: parseFloat(editProductForm.cost_price) || 0,
+        selling_price: parseFloat(editProductForm.selling_price) || 0,
+        stock_quantity: parseInt(editProductForm.stock_quantity) || 0,
+        min_stock_alert: parseInt(editProductForm.min_stock_alert) || 3,
+      };
+      if (editProductForm.category) {
+        payload.category = parseInt(editProductForm.category);
+      } else {
+        payload.category = null;
+      }
+      await api.updateSupplementProduct(editingProductId, payload);
+      setIsEditProductOpen(false);
+      loadData();
+      setToast({
+        message: `Product "${payload.name}" was successfully updated!`,
+        type: 'success',
+      });
+      setTimeout(() => setToast(null), 4000);
+    } catch (err: any) {
+      setEditError(err.response?.data?.detail || 'Failed to update product details.');
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  };
+
+  const handleConfirmDeleteProduct = async () => {
+    if (!productToDelete) return;
+    setIsDeletingItem(true);
+    try {
+      const prodName = productToDelete.name;
+      await api.deleteSupplementProduct(productToDelete.id);
+      setProductToDelete(null);
+      loadData();
+      setToast({
+        message: `Product "${prodName}" was successfully deleted.`,
+        type: 'success',
+      });
+      setTimeout(() => setToast(null), 4000);
+    } catch (err: any) {
+      setToast({
+        message: err.response?.data?.detail || 'Failed to delete product.',
+        type: 'error',
+      });
+      setTimeout(() => setToast(null), 4000);
+    } finally {
+      setIsDeletingItem(false);
     }
   };
 
@@ -284,6 +522,18 @@ export const Supplements: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
+          <button
+            onClick={() => {
+              setCategoryError(null);
+              setCategorySuccess(null);
+              setIsAddCategoryOpen(true);
+            }}
+            className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 border border-slate-200"
+          >
+            <Plus className="w-4 h-4 text-orange-600" />
+            <span>Add Category</span>
+          </button>
+
           <button
             onClick={() => setIsAddProductOpen(true)}
             className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition-all flex items-center gap-2 border border-slate-200"
@@ -427,7 +677,7 @@ export const Supplements: React.FC = () => {
                 <select
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-700 focus:outline-none focus:border-orange-500"
+                  className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-orange-500 cursor-pointer"
                 >
                   <option value="ALL">All Categories</option>
                   {categories.map((cat) => (
@@ -522,18 +772,37 @@ export const Supplements: React.FC = () => {
                           </td>
 
                           <td className="p-3.5 text-right">
-                            <button
-                              onClick={() => {
-                                setSelectedProductForRestock(p);
-                                setRestockQty('5');
-                                setRestockCost(p.cost_price.toString());
-                                setIsRestockOpen(true);
-                              }}
-                              className="px-3 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold text-[11px] border border-orange-200 transition-colors inline-flex items-center gap-1.5"
-                            >
-                              <PackagePlus className="w-3.5 h-3.5" />
-                              <span>Restock</span>
-                            </button>
+                            <div className="inline-flex items-center gap-1.5 justify-end">
+                              <button
+                                onClick={() => {
+                                  setSelectedProductForRestock(p);
+                                  setRestockQty('5');
+                                  setRestockCost(p.cost_price.toString());
+                                  setIsRestockOpen(true);
+                                }}
+                                className="px-2.5 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold text-[11px] border border-orange-200 transition-colors inline-flex items-center gap-1"
+                                title="Restock Units"
+                              >
+                                <PackagePlus className="w-3.5 h-3.5" />
+                                <span>Restock</span>
+                              </button>
+
+                              <button
+                                onClick={() => handleOpenEditProduct(p)}
+                                className="p-1.5 rounded-xl bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-600 border border-slate-200 hover:border-blue-200 transition-colors"
+                                title="Edit Product Details"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                onClick={() => setProductToDelete(p)}
+                                className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 border border-slate-200 hover:border-rose-200 transition-colors"
+                                title="Delete Product"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -924,7 +1193,7 @@ export const Supplements: React.FC = () => {
                   <select
                     value={productForm.category}
                     onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-medium"
                   >
                     <option value="">-- General Category --</option>
                     {categories.map((cat) => (
@@ -1032,6 +1301,168 @@ export const Supplements: React.FC = () => {
         </div>
       )}
 
+      {/* MODAL: Edit Supplement Product */}
+      {isEditProductOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="relative w-full max-w-lg bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-5 h-5 text-orange-600" />
+                <h3 className="font-bold font-heading text-slate-900 text-base">Edit Supplement Product</h3>
+              </div>
+              <button
+                onClick={() => setIsEditProductOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateProduct} className="p-6 space-y-4 text-xs">
+              {editError && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+                  {editError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">Product Title</label>
+                <input
+                  type="text"
+                  required
+                  value={editProductForm.name}
+                  onChange={(e) => setEditProductForm({ ...editProductForm, name: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Brand</label>
+                  <input
+                    type="text"
+                    required
+                    value={editProductForm.brand}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, brand: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Category</label>
+                  <select
+                    value={editProductForm.category}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, category: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-medium"
+                  >
+                    <option value="">-- General Category --</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id.toString()}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Flavor</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Double Rich Chocolate"
+                    value={editProductForm.flavor}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, flavor: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Weight / Servings</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 1 kg / 30 servings"
+                    value={editProductForm.weight_or_servings}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, weight_or_servings: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Purchase Cost (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    value={editProductForm.cost_price}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, cost_price: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Selling Price / MRP (₹)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    required
+                    value={editProductForm.selling_price}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, selling_price: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold text-orange-700"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Current Stock Units</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={editProductForm.stock_quantity}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, stock_quantity: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Low-Stock Alert Level</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editProductForm.min_stock_alert}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, min_stock_alert: e.target.value })}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsEditProductOpen(false)}
+                  className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-bold transition-colors"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={isSubmittingEdit}
+                  className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-black shadow-md shadow-orange-500/20 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {isSubmittingEdit ? <span>Updating...</span> : <span>Save Changes</span>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* MODAL 3: Restock Inventory */}
       {isRestockOpen && selectedProductForRestock && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -1102,12 +1533,231 @@ export const Supplements: React.FC = () => {
         </div>
       )}
 
+      {/* MODAL 4: Manage & Add Supplement Category */}
+      {isAddCategoryOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="relative w-full max-w-md bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2">
+                <Layers className="w-5 h-5 text-orange-600" />
+                <h3 className="font-bold font-heading text-slate-900 text-base">Manage Categories</h3>
+              </div>
+              <button
+                onClick={() => setIsAddCategoryOpen(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5 text-xs">
+              {/* Add New Category Form */}
+              <form onSubmit={handleAddCategory} className="space-y-3">
+                <h4 className="font-bold text-slate-800 uppercase tracking-wider text-[10px]">
+                  Add New Category
+                </h4>
+
+                {categoryError && (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+                    {categoryError}
+                  </div>
+                )}
+
+                {categorySuccess && (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold flex items-center gap-2">
+                    <Check className="w-4 h-4 text-emerald-600" />
+                    <span>{categorySuccess}</span>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">
+                    Category Name <span className="text-rose-600">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Creatine, Pre-Workout, Whey Protein..."
+                    value={categoryName}
+                    onChange={(e) => setCategoryName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">
+                    Description <span className="text-slate-400 font-normal">(Optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Short description or notes..."
+                    value={categoryDesc}
+                    onChange={(e) => setCategoryDesc(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                  />
+                </div>
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="submit"
+                    disabled={isSubmittingCategory || !categoryName.trim()}
+                    className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold shadow-md shadow-orange-500/20 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>{isSubmittingCategory ? 'Adding...' : 'Add Category'}</span>
+                  </button>
+                </div>
+              </form>
+
+              {/* Current Categories List */}
+              <div className="pt-4 border-t border-slate-100 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-slate-800 uppercase tracking-wider text-[10px]">
+                    Current Categories ({categories.length})
+                  </h4>
+                </div>
+
+                <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 divide-y divide-slate-50">
+                  {categories.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center justify-between p-2 rounded-xl bg-slate-50 hover:bg-slate-100 transition-colors"
+                    >
+                      <div className="truncate pr-2">
+                        <span className="font-bold text-slate-800 text-xs block truncate">{c.name}</span>
+                        {c.description && (
+                          <span className="text-[10px] text-slate-400 block truncate">{c.description}</span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-200/70 text-slate-600">
+                          {c.products_count || 0} prods
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setCategoryToDelete({ id: c.id, name: c.name })}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                          title={`Delete ${c.name}`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {categories.length === 0 && (
+                    <div className="text-center py-4 text-slate-400 text-xs">
+                      No categories added yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Printable Receipt Modal */}
       {activeReceipt && (
         <SupplementReceiptModal
           receipt={activeReceipt}
           onClose={() => setActiveReceipt(null)}
         />
+      )}
+
+      {/* Product Delete Confirmation Modal */}
+      <Modal
+        isOpen={!!productToDelete}
+        onClose={() => setProductToDelete(null)}
+        title="Confirm Product Deletion"
+        subtitle="Action cannot be undone"
+      >
+        <div className="space-y-4">
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-800 space-y-2">
+            <div className="flex items-center gap-2 font-bold text-sm text-rose-900">
+              <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+              <span>Are you sure you want to delete this product?</span>
+            </div>
+            <p className="text-[11px] text-rose-700 pl-7">
+              This will permanently remove <strong>{productToDelete?.name}</strong> ({productToDelete?.brand}) from the inventory catalog. Historical sales invoices will retain their line item descriptions.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setProductToDelete(null)}
+              className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmDeleteProduct}
+              disabled={isDeletingItem}
+              className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md shadow-rose-500/20 disabled:opacity-50"
+            >
+              {isDeletingItem ? 'Deleting...' : 'Yes, Delete Product'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Category Delete Confirmation Modal */}
+      <Modal
+        isOpen={!!categoryToDelete}
+        onClose={() => setCategoryToDelete(null)}
+        title="Confirm Category Deletion"
+        subtitle="Action cannot be undone"
+      >
+        <div className="space-y-4">
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 space-y-2">
+            <div className="flex items-center gap-2 font-bold text-sm text-rose-900">
+              <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+              <span>Are you sure you want to delete this category?</span>
+            </div>
+            <p className="text-[11px] text-rose-700 pl-7">
+              This will remove category <strong>{categoryToDelete?.name}</strong>. Products in this category will remain, but will be uncategorized.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setCategoryToDelete(null)}
+              className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmDeleteCategory}
+              disabled={isDeletingItem}
+              className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md shadow-rose-500/20 disabled:opacity-50"
+            >
+              {isDeletingItem ? 'Deleting...' : 'Yes, Delete Category'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-5 duration-300">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl border text-xs font-bold ${
+            toast.type === 'success'
+              ? 'bg-slate-900 text-white border-slate-700'
+              : 'bg-rose-600 text-white border-rose-700'
+          }`}>
+            {toast.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-amber-300 flex-shrink-0" />
+            )}
+            <span>{toast.message}</span>
+          </div>
+        </div>
       )}
     </div>
   );

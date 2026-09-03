@@ -7,9 +7,11 @@ import { Trainer } from '../types';
 import { api } from '../services/api';
 import { Modal } from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 
 export const Trainers: React.FC = () => {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const isAdmin = user?.role === 'OWNER';
 
   const [trainers, setTrainers] = useState<Trainer[]>([]);
@@ -92,13 +94,15 @@ export const Trainers: React.FC = () => {
 
       if (editingTrainer) {
         await api.updateTrainer(editingTrainer.id, payload);
+        showToast(`Trainer profile "${payload.name}" updated successfully!`, 'success');
       } else {
         await api.createTrainer(payload);
+        showToast(`Trainer profile "${payload.name}" created successfully!`, 'success');
       }
       setIsModalOpen(false);
       fetchTrainers();
     } catch (err) {
-      alert('Failed to save trainer profile');
+      showToast('Failed to save trainer profile.', 'error');
     }
   };
 

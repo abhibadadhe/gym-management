@@ -1,4 +1,5 @@
 import json
+import random
 from decimal import Decimal
 from datetime import date, datetime, timedelta
 from django.db.models import Sum, Count, Q, F
@@ -6,8 +7,10 @@ from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse, JsonResponse
 from django.core import serializers as django_serializers
+from django.core.mail import send_mail
 
 from rest_framework import viewsets, status, permissions
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import action
@@ -17,14 +20,16 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from .models import (
     User, GymSettings, Trainer, MembershipPlan, Member,
     MemberMembership, Payment, Attendance, WorkoutPlan,
-    WorkoutExercise, Expense, AuditLog,
-    SupplementCategory, SupplementProduct, SupplementSale, SupplementSaleItem
+    WorkoutExercise, Expense, ExpenseCategory, AuditLog,
+    SupplementCategory, SupplementProduct, SupplementSale, SupplementSaleItem,
+    PasswordResetOTP
 )
 from .serializers import (
     UserSerializer, GymSettingsSerializer, TrainerSerializer,
     MembershipPlanSerializer, MemberListSerializer, MemberDetailSerializer,
     MemberMembershipSerializer, PaymentSerializer, AttendanceSerializer,
     WorkoutPlanSerializer, WorkoutExerciseSerializer, ExpenseSerializer,
+    ExpenseCategorySerializer,
     AuditLogSerializer, AddMemberWithMembershipSerializer,
     MemberUpdateSerializer,
     RenewMembershipSerializer, QuickPaymentSerializer,
@@ -64,6 +69,129 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
+
+
+class ForgotPasswordView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        identifier = request.data.get('identifier', '').strip()
+        if not identifier:
+            return Response({'detail': 'Please provide your registered Gmail address or username.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.filter(Q(email__iexact=identifier) | Q(username__iexact=identifier)).first()
+        if not user or not user.email:
+            return Response({'detail': 'No registered account found matching this email or username.'}, status=status.HTTP_404_NOT_FOUND)
+
+        otp = f"{random.randint(100000, 999999)}"
+
+        PasswordResetOTP.objects.filter(user=user, is_used=False).update(is_used=True)
+        PasswordResetOTP.objects.create(user=user, otp=otp)
+
+        email_parts = user.email.split('@')
+        masked_user = email_parts[0][0] + '***' + email_parts[0][-1] if len(email_parts[0]) > 2 else email_parts[0]
+        masked_email = f"{masked_user}@{email_parts[1]}" if len(email_parts) == 2 else user.email
+
+        subject = f"Morya Fitness - Password Reset Code: {otp}"
+        message = (
+            f"Hello {user.first_name or user.username},\n\n"
+            f"You requested a password reset for your Morya Fitness account.\n\n"
+            f"Registered Username: {user.username}\n"
+            f"Your 6-Digit Reset Code: {otp}\n\n"
+            f"This code is valid for 15 minutes. Please enter this code in the reset window to set a new password.\n\n"
+            f"If you did not request this reset, please ignore this email.\n\n"
+            f"Best regards,\n"
+            f"Morya Fitness Sinnar"
+        )
+
+        email_sent = False
+        try:
+            from django.conf import settings
+            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or 'noreply@moryafitness.com'
+            send_mail(subject, message, from_email, [user.email], fail_silently=False)
+            email_sent = True
+        except Exception as e:
+            print(f"[Email Error] Could not send OTP email to {user.email}: {e}")
+
+        resp = {
+            'detail': f"A 6-digit password reset code has been sent to your Gmail ({masked_email}).",
+            'email_masked': masked_email,
+            'username': user.username,
+        }
+        if not email_sent:
+            resp['dev_note'] = f"SMTP unconfigured or delivery failed. Dev OTP: {otp}"
+
+        return Response(resp, status=status.HTTP_200_OK)
+
+
+class ResetPasswordView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        identifier = request.data.get('identifier', '').strip()
+        otp = request.data.get('otp', '').strip()
+        new_password = request.data.get('new_password', '').strip()
+
+        if not identifier or not otp or not new_password:
+            return Response({'detail': 'Identifier, OTP, and new password are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(new_password) < 4:
+            return Response({'detail': 'Password must be at least 4 characters long.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.filter(Q(email__iexact=identifier) | Q(username__iexact=identifier)).first()
+        if not user:
+            return Response({'detail': 'Account not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        otp_record = PasswordResetOTP.objects.filter(user=user, otp=otp, is_used=False).first()
+        if not otp_record or not otp_record.is_valid():
+            return Response({'detail': 'Invalid or expired OTP code. Please request a fresh code.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save()
+
+        otp_record.is_used = True
+        otp_record.save()
+
+        log_audit(user, 'PASSWORD_RESET', 'USER', user.id, "User password reset successfully via Gmail OTP.")
+
+        return Response({'detail': 'Password reset successfully! You can now log in with your new password.'}, status=status.HTTP_200_OK)
+
+
+class ForgotUsernameView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email', '').strip()
+        if not email:
+            return Response({'detail': 'Please provide your registered Gmail address.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        users = User.objects.filter(email__iexact=email)
+        if not users.exists():
+            return Response({'detail': 'No account registered with this email address.'}, status=status.HTTP_404_NOT_FOUND)
+
+        usernames = [u.username for u in users]
+        usernames_str = ', '.join(usernames)
+
+        subject = "Morya Fitness - Your Registered Username"
+        message = (
+            f"Hello,\n\n"
+            f"You requested your username for Morya Fitness Gym Management System.\n\n"
+            f"Your Registered Username(s): {usernames_str}\n\n"
+            f"You can now sign in at the Morya Fitness portal using this username.\n\n"
+            f"Best regards,\n"
+            f"Morya Fitness Sinnar"
+        )
+
+        try:
+            from django.conf import settings
+            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or 'noreply@moryafitness.com'
+            send_mail(subject, message, from_email, [email], fail_silently=False)
+        except Exception as e:
+            print(f"[Email Error] Could not send username to {email}: {e}")
+
+        return Response({
+            'detail': f"Your registered username has been sent to your Gmail ({email})."
+        }, status=status.HTTP_200_OK)
 
 
 class UserProfileView(APIView):
@@ -211,11 +339,17 @@ class DashboardStatsView(APIView):
                 'profit': float(m_rev - m_exp)
             })
 
-        # 6. Plan Distribution
-        plan_counts = MemberMembership.objects.values('plan__name').annotate(count=Count('id')).order_by('-count')
+        # 6. Plan Distribution among Active Members (Unique active members per current plan)
+        plan_counts = {}
+        for m in all_members.prefetch_related('memberships', 'memberships__plan'):
+            curr = m.current_membership
+            if curr and curr.plan:
+                p_name = curr.plan.name
+                plan_counts[p_name] = plan_counts.get(p_name, 0) + 1
+
         plan_distribution = [
-            {'name': p['plan__name'] or 'Custom', 'value': p['count']}
-            for p in plan_counts if p['plan__name']
+            {'name': name, 'value': count}
+            for name, count in sorted(plan_counts.items(), key=lambda x: x[1], reverse=True)
         ]
 
         # 7. Recent Check-ins
@@ -265,6 +399,19 @@ class MemberViewSet(viewsets.ModelViewSet):
             f"Updated member profile {instance.full_name} ({instance.member_id})"
         )
 
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        if getattr(instance, '_prefetched_objects_cache', None):
+            instance._prefetched_objects_cache = {}
+
+        detail_serializer = MemberDetailSerializer(instance, context=self.get_serializer_context())
+        return Response(detail_serializer.data)
+
     def get_queryset(self):
         qs = Member.objects.filter(is_active=True).prefetch_related('memberships', 'memberships__plan', 'assigned_trainer')
         search = self.request.query_params.get('search', '').strip()
@@ -291,7 +438,7 @@ class MemberViewSet(viewsets.ModelViewSet):
                 qs = [m for m in qs if m.membership_status == 'EXPIRING_SOON']
             elif status_filter == 'EXPIRED':
                 qs = [m for m in qs if m.membership_status in ['EXPIRED', 'NO_MEMBERSHIP']]
-            elif status_filter == 'PENDING_PAYMENT':
+            elif status_filter in ['PENDING_PAYMENT', 'PENDING_DUES']:
                 qs = [m for m in qs if m.current_membership and m.current_membership.pending_amount > 0]
 
         return qs
@@ -561,6 +708,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         cashier_name = payment.received_by.get_full_name() if payment.received_by else 'Gokul Gugale (Admin)'
 
         return Response({
+            'id': payment.id,
             'gym': {
                 'name': settings.name,
                 'tagline': settings.tagline,
@@ -613,6 +761,17 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 'received_by': cashier_name,
             }
         })
+
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def get_receipt_pdf(self, request, pk=None):
+        from django.http import HttpResponse
+        from .pdf_generator import generate_payment_receipt_pdf
+        payment = self.get_object()
+        pdf_bytes = generate_payment_receipt_pdf(payment)
+        filename = f"Receipt_{payment.receipt_number}.pdf"
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
 
 
 class AttendanceViewSet(viewsets.ModelViewSet):
@@ -783,6 +942,30 @@ class WorkoutPlanViewSet(viewsets.ModelViewSet):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ExpenseCategoryViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsReceptionistOrAdmin]
+    queryset = ExpenseCategory.objects.all()
+    serializer_class = ExpenseCategorySerializer
+
+    def get_queryset(self):
+        # Auto-seed default categories if empty
+        if not ExpenseCategory.objects.exists():
+            defaults = [
+                ('Rent & Property', 'Gym lease, building rent, and property taxes'),
+                ('Electricity & Power Bills', 'Electricity, power, and generator fuel'),
+                ('Equipment Purchase & Repairs', 'Machines, barbells, dumbbells, cables, and servicing'),
+                ('Gym Maintenance & Sanitation', 'AC servicing, plumbing, paint, and repairs'),
+                ('Trainer & Staff Salaries', 'Fitness coaches, front desk, and housekeeping payroll'),
+                ('Cleaning & Housekeeping Supplies', 'Sanitizers, floor cleaners, phenyl, and wipes'),
+                ('Marketing, Flex Banners & Ads', 'Social media ads, hoarding flex, and pamphlets'),
+                ('Supplements & Protein Stock', 'Store inventory purchase and restocking'),
+                ('General / Miscellaneous', 'Internet wifi, drinking water, first aid, and petty cash'),
+            ]
+            for name, desc in defaults:
+                ExpenseCategory.objects.get_or_create(name=name, defaults={'description': desc})
+        return ExpenseCategory.objects.all().order_by('name')
 
 
 class ExpenseViewSet(viewsets.ModelViewSet):
@@ -967,6 +1150,50 @@ class ReportsView(APIView):
             ]
             return Response({'title': 'Attendance Logs Report', 'data': data})
 
+        elif report_type == 'supplements':
+            qs = SupplementSale.objects.select_related('member', 'sold_by').prefetch_related('items__product').order_by('-sale_date')
+            if start_date:
+                qs = qs.filter(sale_date__date__gte=start_date)
+            if end_date:
+                qs = qs.filter(sale_date__date__lte=end_date)
+
+            total_rev = qs.aggregate(t=Sum('final_amount'))['t'] or Decimal('0.00')
+            total_sales = qs.count()
+
+            data = []
+            total_units = 0
+            for s in qs:
+                items_str = ", ".join([f"{item.product_name} (x{item.quantity})" for item in s.items.all()])
+                items_count = sum([item.quantity for item in s.items.all()])
+                total_units += items_count
+                data.append({
+                    'Invoice No': s.invoice_number,
+                    'Date': s.sale_date.strftime('%Y-%m-%d %I:%M %p'),
+                    'Customer': s.customer_name,
+                    'Phone': s.customer_phone or 'N/A',
+                    'Customer Type': 'Gym Member' if s.member else 'Walk-in Customer',
+                    'Items': items_str,
+                    'Qty': items_count,
+                    'Subtotal (₹)': float(s.subtotal),
+                    'Discount (₹)': float(s.discount),
+                    'Final Paid (₹)': float(s.final_amount),
+                    'Method': s.get_payment_method_display(),
+                    'Billed By': s.sold_by.get_full_name() if s.sold_by else 'Staff'
+                })
+
+            avg_val = float(round(total_rev / total_sales, 2)) if total_sales > 0 else 0.0
+
+            return Response({
+                'title': 'Supplements & Store Sales Report',
+                'summary': {
+                    'total_revenue': float(total_rev),
+                    'total_sales_count': total_sales,
+                    'total_units_sold': total_units,
+                    'average_sale_value': avg_val
+                },
+                'data': data
+            })
+
         elif report_type == 'financials':
             mem_qs = Payment.objects.all()
             sup_qs = SupplementSale.objects.all()
@@ -985,6 +1212,14 @@ class ReportsView(APIView):
             total_rev = mem_rev + sup_rev
             total_exp = exp_qs.aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
 
+            data = [
+                {'Metric': 'Membership Fees Collection', 'Amount (₹)': float(mem_rev)},
+                {'Metric': 'Supplements & Store Sales', 'Amount (₹)': float(sup_rev)},
+                {'Metric': 'Gross Total Revenue', 'Amount (₹)': float(total_rev)},
+                {'Metric': 'Total Operating Expenses', 'Amount (₹)': float(total_exp)},
+                {'Metric': 'Net Business Profit', 'Amount (₹)': float(total_rev - total_exp)},
+            ]
+
             return Response({
                 'title': 'Financial P&L Report',
                 'summary': {
@@ -993,7 +1228,8 @@ class ReportsView(APIView):
                     'supplement_revenue': float(sup_rev),
                     'total_expenses': float(total_exp),
                     'net_profit': float(total_rev - total_exp)
-                }
+                },
+                'data': data
             })
 
         return Response({'error': 'Invalid report type'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1118,6 +1354,7 @@ class SupplementSaleViewSet(viewsets.ModelViewSet):
             })
 
         return Response({
+            'id': sale.id,
             'gym': {
                 'name': settings.name,
                 'tagline': settings.tagline,
@@ -1141,6 +1378,17 @@ class SupplementSaleViewSet(viewsets.ModelViewSet):
             'sold_by': cashier_name,
             'notes': sale.notes or "",
         })
+
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def get_invoice_pdf(self, request, pk=None):
+        from django.http import HttpResponse
+        from .pdf_generator import generate_supplement_invoice_pdf
+        sale = self.get_object()
+        pdf_bytes = generate_supplement_invoice_pdf(sale)
+        filename = f"Invoice_{sale.invoice_number}.pdf"
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
 
     @action(detail=False, methods=['get'], url_path='summary')
     def summary(self, request):
@@ -1169,4 +1417,39 @@ class SupplementSaleViewSet(viewsets.ModelViewSet):
             'monthly_sales': float(monthly_sales),
             'lifetime_sales': float(lifetime_sales),
         })
+
+
+class PublicReceiptPdfView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, receipt_number):
+        from django.http import HttpResponse, Http404
+        from .pdf_generator import generate_payment_receipt_pdf
+        try:
+            payment = Payment.objects.select_related('member', 'membership', 'membership__plan').get(receipt_number__iexact=receipt_number)
+        except Payment.DoesNotExist:
+            raise Http404("Receipt not found")
+
+        pdf_bytes = generate_payment_receipt_pdf(payment)
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="Receipt_{payment.receipt_number}.pdf"'
+        return response
+
+
+class PublicInvoicePdfView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, invoice_number):
+        from django.http import HttpResponse, Http404
+        from .pdf_generator import generate_supplement_invoice_pdf
+        try:
+            sale = SupplementSale.objects.select_related('member', 'sold_by').prefetch_related('items', 'items__product').get(invoice_number__iexact=invoice_number)
+        except SupplementSale.DoesNotExist:
+            raise Http404("Invoice not found")
+
+        pdf_bytes = generate_supplement_invoice_pdf(sale)
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="Invoice_{sale.invoice_number}.pdf"'
+        return response
+
 

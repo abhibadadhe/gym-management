@@ -12,7 +12,7 @@ import { DashboardData } from '../types';
 import { api } from '../services/api';
 
 interface DashboardProps {
-  onNavigate: (page: string) => void;
+  onNavigate: (page: string, tab?: string) => void;
   onQuickAction: (action: 'add-member' | 'renew' | 'payment', memberId?: number) => void;
   onOpenWhatsApp: (memberId: number) => void;
 }
@@ -105,7 +105,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {/* Total Members */}
         <div
-          onClick={() => onNavigate('members')}
+          onClick={() => onNavigate('members', 'ALL')}
           className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
         >
           <div className="flex items-center justify-between">
@@ -125,7 +125,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* Active Members */}
         <div
-          onClick={() => onNavigate('members')}
+          onClick={() => onNavigate('members', 'ACTIVE')}
           className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
         >
           <div className="flex items-center justify-between">
@@ -145,7 +145,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* Expiring Soon */}
         <div
-          onClick={() => onNavigate('members')}
+          onClick={() => onNavigate('members', 'EXPIRING_SOON')}
           className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
         >
           <div className="flex items-center justify-between">
@@ -165,7 +165,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* Expired Members */}
         <div
-          onClick={() => onNavigate('members')}
+          onClick={() => onNavigate('members', 'EXPIRED')}
           className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
         >
           <div className="flex items-center justify-between">
@@ -202,8 +202,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
         {/* Outstanding Pending Dues */}
         <div
-          onClick={() => onNavigate('payments')}
+          onClick={() => onNavigate('members', 'PENDING_DUES')}
           className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
+          title="View Members with Pending Dues"
         >
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500">Pending Receivables</span>
@@ -311,16 +312,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           <div className="grid grid-cols-3 gap-2 text-center text-xs pt-2 border-t border-slate-100">
-            <div>
-              <span className="text-[10px] text-slate-400 uppercase font-semibold">Active</span>
+            <div
+              onClick={() => onNavigate('members', 'ACTIVE')}
+              className="cursor-pointer p-1.5 rounded-xl hover:bg-emerald-50 transition-colors group"
+              title="View Active Members"
+            >
+              <span className="text-[10px] text-slate-400 uppercase font-semibold group-hover:text-emerald-700">Active</span>
               <span className="font-bold text-emerald-600 block">{active_members}</span>
             </div>
-            <div>
-              <span className="text-[10px] text-slate-400 uppercase font-semibold">Expiring</span>
+            <div
+              onClick={() => onNavigate('members', 'EXPIRING_SOON')}
+              className="cursor-pointer p-1.5 rounded-xl hover:bg-amber-50 transition-colors group"
+              title="View Expiring Soon Members"
+            >
+              <span className="text-[10px] text-slate-400 uppercase font-semibold group-hover:text-amber-700">Expiring</span>
               <span className="font-bold text-amber-600 block">{expiring_soon_count}</span>
             </div>
-            <div>
-              <span className="text-[10px] text-slate-400 uppercase font-semibold">Expired</span>
+            <div
+              onClick={() => onNavigate('members', 'EXPIRED')}
+              className="cursor-pointer p-1.5 rounded-xl hover:bg-rose-50 transition-colors group"
+              title="View Expired Members"
+            >
+              <span className="text-[10px] text-slate-400 uppercase font-semibold group-hover:text-rose-700">Expired</span>
               <span className="font-bold text-rose-600 block">{expired_count}</span>
             </div>
           </div>
@@ -381,6 +394,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 Expiring This Week ({expiring_members.length})
               </h4>
             </div>
+            <button
+              onClick={() => onNavigate('members', 'EXPIRING_SOON')}
+              className="text-[11px] font-bold text-amber-600 hover:text-amber-700 flex items-center gap-0.5"
+            >
+              <span>View All</span>
+              <ArrowUpRight className="w-3 h-3" />
+            </button>
           </div>
 
           <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
@@ -431,6 +451,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 Pending Balance Dues ({pending_payments.length})
               </h4>
             </div>
+            <button
+              onClick={() => onNavigate('members', 'PENDING_DUES')}
+              className="text-[11px] font-bold text-rose-600 hover:text-rose-700 flex items-center gap-0.5"
+            >
+              <span>View All</span>
+              <ArrowUpRight className="w-3 h-3" />
+            </button>
           </div>
 
           <div className="space-y-2 max-h-64 overflow-y-auto pr-1">

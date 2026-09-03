@@ -6,7 +6,7 @@ from decimal import Decimal
 from .models import (
     User, GymSettings, Trainer, MembershipPlan, Member,
     MemberMembership, Payment, Attendance, WorkoutPlan,
-    WorkoutExercise, Expense, AuditLog,
+    WorkoutExercise, Expense, ExpenseCategory, AuditLog,
     SupplementCategory, SupplementProduct, SupplementSale, SupplementSaleItem
 )
 
@@ -209,18 +209,37 @@ class WorkoutPlanSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class ExpenseCategorySerializer(serializers.ModelSerializer):
+    expenses_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ExpenseCategory
+        fields = ['id', 'name', 'description', 'expenses_count', 'created_at']
+
+    def get_expenses_count(self, obj):
+        return Expense.objects.filter(category__iexact=obj.name).count()
+
+
 class ExpenseSerializer(serializers.ModelSerializer):
-    category_display = serializers.CharField(source='get_category_display', read_only=True)
+    category = serializers.CharField(max_length=100)
+    category_display = serializers.SerializerMethodField()
     recorded_by_name = serializers.ReadOnlyField(source='recorded_by.get_full_name')
+    description = serializers.CharField(max_length=255, required=False, allow_blank=True, default='')
 
     class Meta:
         model = Expense
         fields = '__all__'
         read_only_fields = ['expense_id', 'created_at']
 
+    def get_category_display(self, obj):
+        choices_dict = dict(Expense.CATEGORY_CHOICES)
+        return choices_dict.get(obj.category, obj.category)
+
     def create(self, validated_data):
         if not validated_data.get('expense_id'):
             validated_data['expense_id'] = Expense.generate_expense_id()
+        if not validated_data.get('description'):
+            validated_data['description'] = validated_data.get('category', 'Expense')
         return super().create(validated_data)
 
 
@@ -260,6 +279,22 @@ class AddMemberWithMembershipSerializer(serializers.Serializer):
     payment_method = serializers.CharField(default='UPI', required=False)
     transaction_ref = serializers.CharField(required=False, allow_blank=True)
 
+    def validate_phone(self, value):
+        cleaned = value.strip()
+        if not cleaned:
+            raise serializers.ValidationError("Mobile number is required.")
+        if Member.objects.filter(phone=cleaned).exists():
+            raise serializers.ValidationError(f"Mobile number '{cleaned}' is already registered with another member.")
+        return cleaned
+
+    def validate_email(self, value):
+        cleaned = value.strip().lower()
+        if not cleaned:
+            raise serializers.ValidationError("Email address is required.")
+        if Member.objects.filter(email__iexact=cleaned).exists():
+            raise serializers.ValidationError(f"Email address '{cleaned}' is already registered with another member.")
+        return cleaned
+
     def validate(self, attrs):
         full_name = attrs.get('full_name', '').strip()
         first_name = attrs.get('first_name', '').strip()
@@ -287,6 +322,22 @@ class MemberUpdateSerializer(serializers.ModelSerializer):
             'source', 'joining_date', 'assigned_trainer', 'notes', 'is_active'
         ]
         read_only_fields = ['id', 'member_id']
+
+    def validate_phone(self, value):
+        cleaned = value.strip()
+        instance_id = self.instance.id if self.instance else None
+        if cleaned and instance_id:
+            if Member.objects.filter(phone=cleaned).exclude(id=instance_id).exists():
+                raise serializers.ValidationError(f"Mobile number '{cleaned}' is already registered with another member.")
+        return cleaned
+
+    def validate_email(self, value):
+        cleaned = value.strip().lower()
+        instance_id = self.instance.id if self.instance else None
+        if cleaned and instance_id:
+            if Member.objects.filter(email__iexact=cleaned).exclude(id=instance_id).exists():
+                raise serializers.ValidationError(f"Email address '{cleaned}' is already registered with another member.")
+        return cleaned
 
     def update(self, instance, validated_data):
         full_name = validated_data.pop('full_name', None)
@@ -349,6 +400,8 @@ class SupplementProductSerializer(serializers.ModelSerializer):
 
 
 class SupplementSaleItemSerializer(serializers.ModelSerializer):
+    unit_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+
     class Meta:
         model = SupplementSaleItem
         fields = [

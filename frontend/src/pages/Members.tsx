@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import {
   Search, UserPlus, RefreshCw, Eye, MessageSquare,
-  CreditCard, ChevronRight, CheckCircle2, Trash2
+  CreditCard, ChevronRight, CheckCircle2, Trash2, AlertTriangle
 } from 'lucide-react';
 import { Member } from '../types';
 import { api } from '../services/api';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { Modal } from '../components/common/Modal';
 
 interface MembersProps {
+  initialTab?: string;
   onSelectMember: (memberId: number) => void;
   onAddMember: () => void;
   onRenewMember: (memberId: number) => void;
@@ -16,6 +18,7 @@ interface MembersProps {
 }
 
 export const Members: React.FC<MembersProps> = ({
+  initialTab = 'ALL',
   onSelectMember,
   onAddMember,
   onRenewMember,
@@ -25,14 +28,24 @@ export const Members: React.FC<MembersProps> = ({
   const [members, setMembers] = useState<Member[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<string>('ALL');
+  const [activeTab, setActiveTab] = useState<string>(initialTab || 'ALL');
+
+  // Delete Confirmation & Toast State
+  const [memberToDelete, setMemberToDelete] = useState<Member | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   const fetchMembers = async () => {
     setIsLoading(true);
     try {
       const res = await api.getMembers({
         search: searchTerm || undefined,
-        status: activeTab === 'ALL' || activeTab === 'PENDING_DUES' ? undefined : activeTab,
       });
       setMembers(res);
     } catch (err) {
@@ -42,17 +55,41 @@ export const Members: React.FC<MembersProps> = ({
     }
   };
 
+  const handleConfirmDelete = async () => {
+    if (!memberToDelete) return;
+    setIsDeleting(true);
+    try {
+      await api.deleteMember(memberToDelete.id);
+      setToast({
+        message: `Member ${memberToDelete.full_name} (${memberToDelete.member_id}) was successfully deleted.`,
+        type: 'success',
+      });
+      setMemberToDelete(null);
+      fetchMembers();
+      setTimeout(() => setToast(null), 4000);
+    } catch (err: any) {
+      setToast({
+        message: err.response?.data?.detail || 'Failed to delete member.',
+        type: 'error',
+      });
+      setTimeout(() => setToast(null), 4000);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   useEffect(() => {
     const delayDebounce = setTimeout(() => {
       fetchMembers();
     }, 300);
     return () => clearTimeout(delayDebounce);
-  }, [searchTerm, activeTab]);
+  }, [searchTerm]);
 
   const filteredMembers = members.filter((m) => {
-    if (activeTab === 'PENDING_DUES') {
-      return Number(m.pending_amount) > 0;
-    }
+    if (activeTab === 'ACTIVE') return m.membership_status === 'ACTIVE';
+    if (activeTab === 'EXPIRING_SOON') return m.membership_status === 'EXPIRING_SOON';
+    if (activeTab === 'EXPIRED') return m.membership_status === 'EXPIRED' || m.membership_status === 'NO_MEMBERSHIP';
+    if (activeTab === 'PENDING_DUES') return Number(m.pending_amount) > 0;
     return true;
   });
 
@@ -60,7 +97,7 @@ export const Members: React.FC<MembersProps> = ({
     ALL: members.length,
     ACTIVE: members.filter((m) => m.membership_status === 'ACTIVE').length,
     EXPIRING_SOON: members.filter((m) => m.membership_status === 'EXPIRING_SOON').length,
-    EXPIRED: members.filter((m) => m.membership_status === 'EXPIRED').length,
+    EXPIRED: members.filter((m) => m.membership_status === 'EXPIRED' || m.membership_status === 'NO_MEMBERSHIP').length,
     PENDING_DUES: members.filter((m) => Number(m.pending_amount) > 0).length,
   };
 
@@ -260,18 +297,9 @@ export const Members: React.FC<MembersProps> = ({
 
                       {/* Delete */}
                       <button
-                        onClick={async () => {
-                          if (window.confirm(`Are you sure you want to delete member ${member.full_name} (${member.member_id})?`)) {
-                            try {
-                              await api.deleteMember(member.id);
-                              fetchMembers();
-                            } catch (err: any) {
-                              alert(err.response?.data?.detail || 'Failed to delete member.');
-                            }
-                          }
-                        }}
+                        onClick={() => setMemberToDelete(member)}
                         className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition-colors"
-                        title="Delete Member"
+                        title="Delete Member Profile"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -291,6 +319,64 @@ export const Members: React.FC<MembersProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Delete Member Confirmation Modal (Same as Profile) */}
+      <Modal
+        isOpen={!!memberToDelete}
+        onClose={() => !isDeleting && setMemberToDelete(null)}
+        title="Delete Member Profile"
+        subtitle={memberToDelete ? `Member: ${memberToDelete.full_name} (${memberToDelete.member_id})` : ''}
+        maxWidth="md"
+      >
+        <div className="space-y-4 text-xs text-slate-700">
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 space-y-1">
+            <div className="flex items-center gap-2 font-bold text-sm text-rose-900">
+              <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+              <span>Are you sure you want to delete this member?</span>
+            </div>
+            <p className="text-[11px] text-rose-700 pl-7">
+              This will remove <strong>{memberToDelete?.full_name}</strong> ({memberToDelete?.member_id}) from the active registry. All attendance records and historical payments will remain preserved in audit logs.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setMemberToDelete(null)}
+              disabled={isDeleting}
+              className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmDelete}
+              disabled={isDeleting}
+              className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md shadow-rose-500/20 disabled:opacity-50"
+            >
+              {isDeleting ? 'Deleting...' : 'Yes, Delete Member'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-5 duration-300">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl border text-xs font-bold ${
+            toast.type === 'success'
+              ? 'bg-slate-900 text-white border-slate-700'
+              : 'bg-rose-600 text-white border-rose-700'
+          }`}>
+            {toast.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-amber-300 flex-shrink-0" />
+            )}
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

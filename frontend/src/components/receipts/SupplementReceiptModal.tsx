@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Printer, X, CheckCircle2, ShoppingBag, MapPin,
-  Phone, CreditCard, Sparkles, Building2
+  Phone, CreditCard, Sparkles, Building2, MessageSquare,
+  RefreshCw
 } from 'lucide-react';
 import { SupplementReceiptData } from '../../types';
+import { api } from '../../services/api';
+import { useToast } from '../../context/ToastContext';
 
 interface SupplementReceiptModalProps {
   receipt: SupplementReceiptData;
@@ -11,9 +14,10 @@ interface SupplementReceiptModalProps {
 }
 
 export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ receipt, onClose }) => {
+  const { showToast } = useToast();
   const gymName = receipt.gym?.name || 'Morya Fitness';
   const gymTagline = receipt.gym?.tagline || 'Premium Gym & Fitness Center';
-  const gymAddress = receipt.gym?.address || 'Near Shiv Smarak, Sinnar, Nashik, Maharashtra 422103';
+  const gymAddress = receipt.gym?.address || 'Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103';
   const gymPhone = receipt.gym?.phone || '+91 98220 12345';
   const gymUpi = receipt.gym?.upi_id || 'moryafitness@okhdfcbank';
 
@@ -26,10 +30,92 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
   };
   const paymentMethod = formatPaymentMethod(receipt.payment_method);
 
+  const [isSending, setIsSending] = useState(false);
+
+  const handleSendWhatsApp = async () => {
+    setIsSending(true);
+    try {
+      const rawPhone = receipt.customer_phone || '';
+      const cleanPhone = String(rawPhone).replace(/\D/g, '');
+      const phoneWithCountry = cleanPhone.startsWith('91') && cleanPhone.length === 12
+        ? cleanPhone
+        : cleanPhone.length === 10
+          ? `91${cleanPhone}`
+          : cleanPhone;
+
+      const origin = window.location.origin;
+      const pdfUrl = `${origin}/api/public/invoices/${encodeURIComponent(receipt.invoice_number)}/pdf/`;
+
+      const itemsText = receipt.items
+        .map((item, idx) => `${idx + 1}. *${item.name}* (Qty: ${item.quantity}) — ₹${item.subtotal.toLocaleString('en-IN')}`)
+        .join('\n');
+
+      const message = `🛍️ *${gymName.toUpperCase()} — SUPPLEMENT INVOICE*\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `Dear *${receipt.customer_name}*,\n\n` +
+        `Thank you for your supplement purchase at *${gymName}*! Here are your invoice details:\n\n` +
+        `📄 *Invoice No:* ${receipt.invoice_number}\n` +
+        `📅 *Date:* ${receipt.sale_date}\n` +
+        `💳 *Payment Mode:* ${paymentMethod}\n\n` +
+        `*Purchased Items:*\n${itemsText}\n\n` +
+        `💰 *Total Amount Paid:* ₹${receipt.final_amount.toLocaleString('en-IN')}\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `📍 *Store:* ${gymAddress}\n` +
+        `📞 *Helpdesk:* ${gymPhone}\n\n` +
+        `_Authentic fitness supplements guaranteed by ${gymName}!_ 💪`;
+
+      const saleId = (receipt as any).id || (receipt as any).sale_id;
+      if (saleId) {
+        try {
+          const blob = await api.getSupplementInvoicePdf(saleId);
+          const fileName = `Invoice_${receipt.invoice_number}.pdf`;
+          const file = new File([blob], fileName, { type: 'application/pdf' });
+
+          // 1. Mobile & Web Share API support (Android, iOS)
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            try {
+              await navigator.share({
+                files: [file],
+                title: `Supplement Invoice - ${receipt.invoice_number}`,
+                text: message,
+              });
+              return;
+            } catch (shareErr: any) {
+              if (shareErr.name === 'AbortError') return;
+              console.warn('Native share failed, proceeding with desktop fallback:', shareErr);
+            }
+          } else {
+            // 2. Desktop Fallback:
+            const url = window.URL.createObjectURL(file);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = file.name;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+          }
+        } catch (e) {
+          console.warn('Invoice PDF fetch error:', e);
+        }
+      }
+
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const encodedText = encodeURIComponent(message);
+      const whatsappUrl = isMobile
+        ? `https://api.whatsapp.com/send?phone=${phoneWithCountry}&text=${encodedText}`
+        : `https://web.whatsapp.com/send?phone=${phoneWithCountry}&text=${encodedText}`;
+
+      window.open(whatsappUrl, '_blank');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const handlePrint = () => {
     const printWindow = window.open('', '_blank', 'width=800,height=900');
     if (!printWindow) {
-      alert('Please allow popups in your browser to print the invoice.');
+      showToast('Please allow popups in your browser to print the invoice.', 'error');
       return;
     }
 
@@ -372,7 +458,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
         </div>
 
         {/* Receipt Content */}
-        <div className="p-6 space-y-5 text-xs text-slate-700 max-h-[75vh] overflow-y-auto">
+        <div id="printable-supplement-invoice" className="p-6 space-y-5 text-xs text-slate-700 max-h-[75vh] overflow-y-auto">
           {/* Gym Branding */}
           <div className="flex items-center justify-between gap-4 pb-4 border-b border-slate-100">
             <div className="flex items-center gap-3">
@@ -479,12 +565,19 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
         </div>
 
         {/* Action Buttons */}
-        <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+        <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3 flex-wrap">
           <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-200 font-bold text-xs transition-colors"
+            onClick={handleSendWhatsApp}
+            disabled={isSending}
+            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 flex items-center gap-2 transition-all disabled:opacity-60"
+            title="Send PDF Invoice via WhatsApp"
           >
-            Close
+            {isSending ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <MessageSquare className="w-4 h-4" />
+            )}
+            <span>{isSending ? 'Preparing PDF...' : 'Send to WhatsApp'}</span>
           </button>
 
           <button
@@ -492,7 +585,14 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
             className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-black text-xs shadow-md shadow-orange-500/20 flex items-center gap-2 transition-all"
           >
             <Printer className="w-4 h-4" />
-            <span>Print Invoice</span>
+            <span>Print</span>
+          </button>
+
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-200 font-bold text-xs transition-colors"
+          >
+            Close
           </button>
         </div>
       </div>

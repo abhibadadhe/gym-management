@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Award, Plus, Edit2, Trash2, CheckCircle2, RefreshCw, Clock } from 'lucide-react';
+import { Award, Plus, Edit2, Trash2, CheckCircle2, RefreshCw, Clock, AlertTriangle } from 'lucide-react';
 import { MembershipPlan } from '../types';
 import { api } from '../services/api';
 import { Modal } from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
 
 export const MembershipPlans: React.FC = () => {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const isAdmin = user?.role === 'OWNER';
 
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingPlan, setEditingPlan] = useState<MembershipPlan | null>(null);
+  const [planToDelete, setPlanToDelete] = useState<MembershipPlan | null>(null);
+  const [isDeletingPlan, setIsDeletingPlan] = useState<boolean>(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -77,24 +81,31 @@ export const MembershipPlans: React.FC = () => {
 
       if (editingPlan) {
         await api.updatePlan(editingPlan.id, payload);
+        showToast(`Membership plan "${payload.name}" was successfully updated!`, 'success');
       } else {
         await api.createPlan(payload);
+        showToast(`Membership plan "${payload.name}" was successfully created!`, 'success');
       }
       setIsModalOpen(false);
       fetchPlans();
-    } catch (err) {
-      alert('Failed to save membership plan');
+    } catch (err: any) {
+      showToast(err.response?.data?.detail || 'Failed to save membership plan.', 'error');
     }
   };
 
-  const handleDelete = async (id: number, name: string) => {
-    if (window.confirm(`Are you sure you want to remove ${name}?`)) {
-      try {
-        await api.deletePlan(id);
-        fetchPlans();
-      } catch (err) {
-        alert('Cannot delete plan with active subscriptions.');
-      }
+  const handleConfirmDeletePlan = async () => {
+    if (!planToDelete) return;
+    setIsDeletingPlan(true);
+    try {
+      const planName = planToDelete.name;
+      await api.deletePlan(planToDelete.id);
+      setPlanToDelete(null);
+      fetchPlans();
+      showToast(`Membership plan "${planName}" was successfully deleted.`, 'success');
+    } catch (err: any) {
+      showToast(err.response?.data?.detail || 'Cannot delete plan with active member subscriptions.', 'error');
+    } finally {
+      setIsDeletingPlan(false);
     }
   };
 
@@ -175,7 +186,7 @@ export const MembershipPlans: React.FC = () => {
               </span>
               {isAdmin && (
                 <button
-                  onClick={() => handleDelete(plan.id, plan.name)}
+                  onClick={() => setPlanToDelete(plan)}
                   className="text-slate-400 hover:text-rose-600 text-xs transition-colors font-medium"
                 >
                   Delete
@@ -265,6 +276,44 @@ export const MembershipPlans: React.FC = () => {
             {editingPlan ? 'Update Plan' : 'Create Plan'}
           </button>
         </form>
+      </Modal>
+
+      {/* Plan Delete Confirmation Modal */}
+      <Modal
+        isOpen={!!planToDelete}
+        onClose={() => setPlanToDelete(null)}
+        title="Confirm Plan Deletion"
+        subtitle="Action cannot be undone"
+      >
+        <div className="space-y-4">
+          <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-800 space-y-2">
+            <div className="flex items-center gap-2 font-bold text-sm text-rose-900">
+              <AlertTriangle className="w-5 h-5 text-rose-600 flex-shrink-0" />
+              <span>Are you sure you want to delete this plan?</span>
+            </div>
+            <p className="text-[11px] text-rose-700 pl-7">
+              This will permanently remove <strong>{planToDelete?.name}</strong> (₹{planToDelete?.price} / {planToDelete?.duration_days} days). Plans with active member subscriptions cannot be deleted.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setPlanToDelete(null)}
+              className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 font-semibold"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmDeletePlan}
+              disabled={isDeletingPlan}
+              className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md shadow-rose-500/20 disabled:opacity-50"
+            >
+              {isDeletingPlan ? 'Deleting...' : 'Yes, Delete Plan'}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

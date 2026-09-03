@@ -16,6 +16,7 @@ interface MemberDetailsProps {
   onTakePayment: (memberId: number) => void;
   onOpenWhatsApp: (memberId: number) => void;
   onViewReceipt: (receiptData: ReceiptData) => void;
+  onDeleteSuccess?: (memberName: string, memberIdStr: string) => void;
 }
 
 export const MemberDetails: React.FC<MemberDetailsProps> = ({
@@ -25,11 +26,12 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
   onTakePayment,
   onOpenWhatsApp,
   onViewReceipt,
+  onDeleteSuccess,
 }) => {
   const [member, setMember] = useState<Member | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'memberships' | 'payments' | 'notes'
+    'overview' | 'memberships' | 'payments'
   >('overview');
 
   // Edit & Delete Modals
@@ -38,8 +40,19 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
   const [isUpdating, setIsUpdating] = useState<boolean>(false);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<{
+    full_name: string;
+    phone: string;
+    email: string;
+    dob: string;
+    gender: 'MALE' | 'FEMALE' | 'OTHER';
+    address: string;
+    emergency_contact_name: string;
+    emergency_contact_phone: string;
+    notes: string;
+  }>({
     full_name: '',
     phone: '',
     email: '',
@@ -58,7 +71,7 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
       phone: member.phone || '',
       email: member.email || '',
       dob: member.dob || '',
-      gender: member.gender || 'MALE',
+      gender: (member.gender as 'MALE' | 'FEMALE' | 'OTHER') || 'MALE',
       address: member.address || '',
       emergency_contact_name: member.emergency_contact_name || '',
       emergency_contact_phone: member.emergency_contact_phone || '',
@@ -90,8 +103,25 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
         emergency_contact_phone: editForm.emergency_contact_phone.trim(),
         notes: editForm.notes.trim(),
       });
-      setMember(updated);
+      setMember((prev) => {
+        if (!prev) return updated;
+        return {
+          ...prev,
+          ...updated,
+          current_plan: updated.current_plan || prev.current_plan,
+          membership_status: updated.membership_status || prev.membership_status,
+          days_remaining: updated.days_remaining ?? prev.days_remaining,
+          memberships: (updated.memberships && updated.memberships.length > 0) ? updated.memberships : prev.memberships,
+          payments: (updated.payments && updated.payments.length > 0) ? updated.payments : prev.payments,
+        };
+      });
       setIsEditModalOpen(false);
+      setToast({
+        message: `Member "${updated.full_name}" was successfully updated!`,
+        type: 'success',
+      });
+      setTimeout(() => setToast(null), 4000);
+      fetchMember();
     } catch (err: any) {
       setEditError(err.response?.data?.detail || 'Failed to update member information.');
     } finally {
@@ -103,11 +133,21 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
     if (!member) return;
     setIsDeleting(true);
     try {
+      const memberName = member.full_name;
+      const memberCode = member.member_id;
       await api.deleteMember(member.id);
       setIsDeleteModalOpen(false);
-      onBack();
+      if (onDeleteSuccess) {
+        onDeleteSuccess(memberName, memberCode);
+      } else {
+        onBack();
+      }
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Failed to delete member.');
+      setToast({
+        message: err.response?.data?.detail || 'Failed to delete member.',
+        type: 'error',
+      });
+      setTimeout(() => setToast(null), 4000);
       setIsDeleting(false);
     }
   };
@@ -248,17 +288,16 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
                 {member.days_remaining > 0
                   ? `${member.days_remaining} Days Left`
                   : currentPlan !== 'None'
-                  ? 'Active'
-                  : 'No Active Plan'}
+                    ? 'Active'
+                    : 'No Active Plan'}
               </span>
             </div>
 
             <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
               <span className="text-[10px] text-slate-400 uppercase font-bold block">Pending Due</span>
               <span
-                className={`font-black text-sm block mt-0.5 ${
-                  pendingDue > 0 ? 'text-rose-600' : 'text-emerald-600'
-                }`}
+                className={`font-black text-sm block mt-0.5 ${pendingDue > 0 ? 'text-rose-600' : 'text-emerald-600'
+                  }`}
               >
                 ₹{pendingDue.toLocaleString('en-IN')}
               </span>
@@ -283,16 +322,14 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
           { id: 'overview', label: 'Personal & Gym Details' },
           { id: 'memberships', label: `Memberships History (${member.memberships?.length || 0})` },
           { id: 'payments', label: `Receipts & Payments (${member.payments?.length || 0})` },
-          { id: 'notes', label: 'Staff Notes' },
         ].map((t) => (
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id as any)}
-            className={`px-4 py-2.5 rounded-xl whitespace-nowrap transition-all ${
-              activeTab === t.id
-                ? 'bg-orange-500 text-white shadow-sm'
-                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
-            }`}
+            className={`px-4 py-2.5 rounded-xl whitespace-nowrap transition-all ${activeTab === t.id
+              ? 'bg-orange-500 text-white shadow-sm'
+              : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+              }`}
           >
             {t.label}
           </button>
@@ -405,11 +442,10 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
                   </td>
                   <td className="py-3 px-4">
                     <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                        m.is_renewal
-                          ? 'bg-amber-50 text-amber-800 border-amber-200'
-                          : 'bg-blue-50 text-blue-800 border-blue-200'
-                      }`}
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${m.is_renewal
+                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                        : 'bg-blue-50 text-blue-800 border-blue-200'
+                        }`}
                     >
                       {m.is_renewal ? 'Renewal' : 'Initial Enrollment'}
                     </span>
@@ -467,18 +503,6 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {/* Tab 4: Staff Notes */}
-      {activeTab === 'notes' && (
-        <div className="glass-panel p-6 rounded-3xl space-y-4">
-          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 border-b border-slate-100 pb-2">
-            Staff & Medical Notes
-          </h3>
-          <p className="text-xs text-slate-700 bg-slate-50 p-4 rounded-2xl border border-slate-200 leading-relaxed">
-            {member.notes || 'No remarks recorded for this member.'}
-          </p>
         </div>
       )}
 
@@ -558,7 +582,7 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
               </label>
               <select
                 value={editForm.gender}
-                onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
+                onChange={(e) => setEditForm({ ...editForm, gender: e.target.value as 'MALE' | 'FEMALE' | 'OTHER' })}
                 required
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
               >
@@ -676,6 +700,23 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
           </div>
         </div>
       </Modal>
+
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-5 duration-300">
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl border text-xs font-bold ${toast.type === 'success'
+            ? 'bg-slate-900 text-white border-slate-700'
+            : 'bg-rose-600 text-white border-rose-700'
+            }`}>
+            {toast.type === 'success' ? (
+              <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-amber-300 flex-shrink-0" />
+            )}
+            <span>{toast.message}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

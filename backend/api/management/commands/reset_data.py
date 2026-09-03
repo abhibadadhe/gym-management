@@ -61,7 +61,7 @@ class Command(BaseCommand):
         gym_settings = GymSettings.get_settings()
         gym_settings.name = "Morya Fitness"
         gym_settings.tagline = "Premium Gym & Fitness Center"
-        gym_settings.address = "Near Shiv Smarak, Sinnar, Nashik, Maharashtra 422103"
+        gym_settings.address = "Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103"
         gym_settings.phone = "+91 98220 12345"
         gym_settings.email = "contact@moryafitness.com"
         gym_settings.upi_id = "moryafitness@okhdfcbank"

@@ -2,7 +2,7 @@ import axios from 'axios';
 import {
   User, GymSettings, Trainer, MembershipPlan, Member,
   MemberMembership, Payment, Attendance, WorkoutPlan,
-  WorkoutExercise, Expense, AuditLog, DashboardData,
+  WorkoutExercise, Expense, ExpenseCategory, AuditLog, DashboardData,
   ReceiptData, MemberWhatsAppTemplates,
   SupplementCategory, SupplementProduct, SupplementSale,
   SupplementSummary, SupplementReceiptData
@@ -47,6 +47,18 @@ export const api = {
   // Auth
   login: async (credentials: { username: string; password: string }) => {
     const res = await apiClient.post('/auth/login/', credentials);
+    return res.data;
+  },
+  forgotPassword: async (identifier: string) => {
+    const res = await apiClient.post('/auth/forgot-password/', { identifier });
+    return res.data;
+  },
+  resetPassword: async (data: { identifier: string; otp: string; new_password: string }) => {
+    const res = await apiClient.post('/auth/reset-password/', data);
+    return res.data;
+  },
+  forgotUsername: async (email: string) => {
+    const res = await apiClient.post('/auth/forgot-username/', { email });
     return res.data;
   },
   getProfile: async (): Promise<User> => {
@@ -143,6 +155,10 @@ export const api = {
     const res = await apiClient.get(`/payments/${id}/receipt/`);
     return res.data;
   },
+  getReceiptPdf: async (id: number | string): Promise<Blob> => {
+    const res = await apiClient.get(`/payments/${id}/pdf/`, { responseType: 'blob' });
+    return res.data;
+  },
 
   // Attendance
   getAttendance: async (params?: { date?: string; member_id?: string }): Promise<Attendance[]> => {
@@ -203,6 +219,18 @@ export const api = {
     const res = await apiClient.delete(`/expenses/${id}/`);
     return res.data;
   },
+  getExpenseCategories: async (): Promise<ExpenseCategory[]> => {
+    const res = await apiClient.get('/expenses/categories/');
+    return res.data;
+  },
+  createExpenseCategory: async (data: { name: string; description?: string }): Promise<ExpenseCategory> => {
+    const res = await apiClient.post('/expenses/categories/', data);
+    return res.data;
+  },
+  deleteExpenseCategory: async (id: number) => {
+    const res = await apiClient.delete(`/expenses/categories/${id}/`);
+    return res.data;
+  },
 
   // Financials & Reports
   getFinancialSummary: async () => {
@@ -235,6 +263,10 @@ export const api = {
     const res = await apiClient.post('/supplements/categories/', data);
     return res.data;
   },
+  deleteSupplementCategory: async (id: number) => {
+    const res = await apiClient.delete(`/supplements/categories/${id}/`);
+    return res.data;
+  },
   getSupplementProducts: async (params?: { category?: number; search?: string; low_stock?: boolean }): Promise<SupplementProduct[]> => {
     const res = await apiClient.get('/supplements/products/', { params });
     return res.data;
@@ -244,7 +276,7 @@ export const api = {
     return res.data;
   },
   updateSupplementProduct: async (id: number, data: any): Promise<SupplementProduct> => {
-    const res = await apiClient.put(`/supplements/products/${id}/`, data);
+    const res = await apiClient.patch(`/supplements/products/${id}/`, data);
     return res.data;
   },
   deleteSupplementProduct: async (id: number) => {
@@ -265,6 +297,10 @@ export const api = {
   },
   getSupplementReceipt: async (id: number): Promise<SupplementReceiptData> => {
     const res = await apiClient.get(`/supplements/sales/${id}/receipt/`);
+    return res.data;
+  },
+  getSupplementInvoicePdf: async (id: number): Promise<Blob> => {
+    const res = await apiClient.get(`/supplements/sales/${id}/pdf/`, { responseType: 'blob' });
     return res.data;
   },
   getSupplementSummary: async (): Promise<SupplementSummary> => {

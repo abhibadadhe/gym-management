@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { MembershipPlan, Trainer, ReceiptData } from '../types';
 import { api } from '../services/api';
+import { useToast } from '../context/ToastContext';
 import confetti from 'canvas-confetti';
 
 interface AddMemberProps {
@@ -13,6 +14,7 @@ interface AddMemberProps {
 }
 
 export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
+  const { showToast } = useToast();
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
   const [isLoadingInit, setIsLoadingInit] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -141,22 +143,79 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
       if (res.receipt?.id) {
         try {
           fullReceiptData = await api.getReceipt(res.receipt.id);
-        } catch (e) {}
+        } catch (e) { }
       }
 
       onSuccess(res.member, fullReceiptData);
     } catch (err: any) {
       console.error(err);
-      setErrorMsg(err.response?.data?.message || 'Failed to onboard member. Please check details.');
+      const data = err.response?.data;
+      let msg = 'Failed to onboard member. Please check details.';
+      if (typeof data === 'object' && data !== null) {
+        if (data.phone) {
+          msg = Array.isArray(data.phone) ? data.phone[0] : String(data.phone);
+        } else if (data.email) {
+          msg = Array.isArray(data.email) ? data.email[0] : String(data.email);
+        } else if (data.detail) {
+          msg = String(data.detail);
+        } else if (data.message) {
+          msg = String(data.message);
+        } else {
+          const firstKey = Object.keys(data)[0];
+          if (firstKey && data[firstKey]) {
+            const val = data[firstKey];
+            msg = `${firstKey.replace(/_/g, ' ')}: ${Array.isArray(val) ? val[0] : String(val)}`;
+          }
+        }
+      }
+      setErrorMsg(msg);
+      showToast(msg, 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key === 'Enter') {
+      const target = e.target as HTMLElement;
+      // Allow normal Enter behavior in textarea
+      if (target.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      // If already focused on submit button, let default submit occur
+      if (target.tagName === 'BUTTON' && (target as HTMLButtonElement).type === 'submit') {
+        return;
+      }
+
+      e.preventDefault();
+
+      // Find all focusable inputs, selects, textareas, and submit buttons in form order
+      const form = e.currentTarget;
+      const focusable = Array.from(
+        form.querySelectorAll<HTMLElement>(
+          'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button[type="submit"]:not([disabled])'
+        )
+      );
+
+      const currentIndex = focusable.indexOf(target);
+      if (currentIndex > -1 && currentIndex < focusable.length - 1) {
+        const next = focusable[currentIndex + 1];
+        next.focus();
+        if (next instanceof HTMLInputElement && next.type !== 'date') {
+          next.select?.();
+        }
+      } else {
+        // Last element -> trigger submit
+        handleSubmit(e as any);
+      }
+    }
+  };
+
   if (isLoadingInit) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3 text-slate-400">
-        <RefreshCw className="w-8 h-8 text-orange-500 animate-spin" />
+      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3 text-orange-600">
+        <RefreshCw className="w-8 h-8 animate-spin" />
         <span className="text-sm font-semibold">Preparing Registration Form...</span>
       </div>
     );
@@ -173,20 +232,27 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
           <ArrowLeft className="w-4 h-4" />
           <span>Cancel & Back</span>
         </button>
-        <span className="text-[11px] font-bold text-orange-700 bg-orange-50 px-3 py-1 rounded-full border border-orange-200">
+        {/* <span className="text-[11px] font-bold text-orange-700 bg-orange-50 px-3 py-1 rounded-full border border-orange-200">
           Fast Single-Screen Registration
-        </span>
+        </span> */}
       </div>
 
       <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm">
-        <div className="border-b border-slate-100 pb-4 mb-6">
-          <h2 className="text-2xl font-black text-slate-900 font-heading tracking-tight flex items-center gap-2.5">
-            <UserPlus className="w-6 h-6 text-orange-600" />
-            New Member Onboarding
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Register member profile, assign membership plan, record upfront/partial fees, and auto-generate QR pass.
-          </p>
+        <div className="border-b border-slate-100 pb-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 className="text-2xl font-black text-slate-900 font-heading tracking-tight flex items-center gap-2.5">
+              <UserPlus className="w-6 h-6 text-orange-600" />
+              New Member Onboarding
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Register member profile, assign membership plan, record upfront/partial fees.
+            </p>
+          </div>
+          {/* <span className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 self-start sm:self-auto">
+            <span>Press</span>
+            <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px] font-bold text-slate-700 shadow-2xs">Enter ↵</kbd>
+            <span>for next field</span>
+          </span> */}
         </div>
 
         {errorMsg && (
@@ -196,7 +262,7 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-8">
+        <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown} className="space-y-8">
           {/* Section 1: Personal Details */}
           <div className="space-y-4">
             <h3 className="text-xs font-bold uppercase tracking-wider text-orange-700 flex items-center gap-2">
@@ -349,11 +415,10 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
                       <div
                         key={p.id}
                         onClick={() => handlePlanChange(p.id.toString())}
-                        className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
-                          isSelected
-                            ? 'bg-orange-50/70 border-orange-500 shadow-sm'
-                            : 'bg-slate-50 border-slate-200 hover:border-slate-300'
-                        }`}
+                        className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${isSelected
+                          ? 'bg-orange-50/70 border-orange-500 shadow-sm'
+                          : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                          }`}
                       >
                         <div className="flex justify-between items-start">
                           <span className="font-bold text-slate-900 text-xs">{p.name}</span>

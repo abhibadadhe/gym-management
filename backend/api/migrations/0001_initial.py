@@ -25,7 +25,7 @@ class Migration(migrations.Migration):
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('name', models.CharField(default='Morya Fitness', max_length=100)),
                 ('tagline', models.CharField(default='Unleash Your Inner Strength', max_length=200)),
-                ('address', models.TextField(default='Near Shiv Smarak, Sinnar, Nashik, Maharashtra 422103')),
+                ('address', models.TextField(default='Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103')),
                 ('phone', models.CharField(default='+91 98220 12345', max_length=30)),
                 ('email', models.EmailField(default='contact@moryafitness.com', max_length=254)),
                 ('website', models.CharField(default='https://moryafitness.com', max_length=100)),

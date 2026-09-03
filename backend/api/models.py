@@ -26,7 +26,7 @@ class User(AbstractUser):
 class GymSettings(models.Model):
     name = models.CharField(max_length=100, default='Morya Fitness')
     tagline = models.CharField(max_length=200, default='Unleash Your Inner Strength')
-    address = models.TextField(default='Near Shiv Smarak, Sinnar, Nashik, Maharashtra 422103')
+    address = models.TextField(default='Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103')
     phone = models.CharField(max_length=30, default='+91 98220 12345')
     email = models.EmailField(default='contact@moryafitness.com')
     website = models.CharField(max_length=100, default='https://moryafitness.com')
@@ -97,8 +97,8 @@ class Member(models.Model):
     member_id = models.CharField(max_length=30, unique=True, db_index=True)
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100, blank=True)
-    phone = models.CharField(max_length=20, db_index=True)
-    email = models.EmailField(blank=True)
+    phone = models.CharField(max_length=20, unique=True, db_index=True)
+    email = models.EmailField(blank=True, null=True, unique=True)
     dob = models.DateField(null=True, blank=True)
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, default='MALE')
     address = models.TextField(blank=True)
@@ -317,6 +317,19 @@ class WorkoutExercise(models.Model):
         return f"{self.exercise_name} ({self.sets} x {self.reps})"
 
 
+class ExpenseCategory(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name_plural = 'Expense Categories'
+
+    def __str__(self):
+        return self.name
+
+
 class Expense(models.Model):
     CATEGORY_CHOICES = [
         ('RENT', 'Gym Rent & Property'),
@@ -338,8 +351,8 @@ class Expense(models.Model):
     ]
 
     expense_id = models.CharField(max_length=30, unique=True, db_index=True)
-    category = models.CharField(max_length=30, choices=CATEGORY_CHOICES, default='OTHER')
-    description = models.CharField(max_length=255)
+    category = models.CharField(max_length=100, default='OTHER')
+    description = models.CharField(max_length=255, blank=True, default='')
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     date = models.DateField(default=date.today)
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default='UPI')
@@ -350,6 +363,10 @@ class Expense(models.Model):
 
     class Meta:
         ordering = ['-date', '-created_at']
+
+    def get_category_display(self):
+        choices_dict = dict(self.CATEGORY_CHOICES)
+        return choices_dict.get(self.category, self.category)
 
     def __str__(self):
         return f"{self.expense_id} - ₹{self.amount} ({self.get_category_display()})"
@@ -479,4 +496,20 @@ class SupplementSaleItem(models.Model):
 
     def __str__(self):
         return f"{self.product_name} x {self.quantity} (₹{self.subtotal})"
+
+
+class PasswordResetOTP(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='password_reset_otps')
+    otp = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_used = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def is_valid(self):
+        return not self.is_used and timezone.now() <= self.created_at + timedelta(minutes=15)
+
+    def __str__(self):
+        return f"OTP for {self.user.username} ({self.otp})"
 

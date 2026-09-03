@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ToastProvider, useToast } from './context/ToastContext';
 import { Login } from './pages/Login';
 import { AppLayout } from './components/layout/AppLayout';
 import { Dashboard } from './pages/Dashboard';
@@ -23,8 +24,11 @@ import { api } from './services/api';
 
 const AppContent: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
+  const { showToast } = useToast();
   const [currentPage, setCurrentPage] = useState<string>('dashboard');
   const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
+  const [renewMemberId, setRenewMemberId] = useState<number | null>(null);
+  const [membersTab, setMembersTab] = useState<string>('ALL');
 
   // Global Modals State
   const [activeReceipt, setActiveReceipt] = useState<ReceiptData | null>(null);
@@ -62,7 +66,13 @@ const AppContent: React.FC = () => {
     return <Login />;
   }
 
-  const handleNavigate = (page: string) => {
+  const handleNavigate = (page: string, tab?: string) => {
+    if (page === 'renew') {
+      setRenewMemberId(null);
+    }
+    if (page === 'members') {
+      setMembersTab(tab || 'ALL');
+    }
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -78,7 +88,7 @@ const AppContent: React.FC = () => {
       const res = await api.getWhatsAppTemplates(memberId);
       setWhatsAppTemplates(res);
     } catch (e) {
-      alert('Could not generate WhatsApp templates');
+      showToast('Could not generate WhatsApp templates.', 'error');
     }
   };
 
@@ -86,7 +96,7 @@ const AppContent: React.FC = () => {
     if (action === 'add-member') {
       setCurrentPage('add-member');
     } else if (action === 'renew') {
-      if (memberId) setSelectedMemberId(memberId);
+      setRenewMemberId(memberId || null);
       setCurrentPage('renew');
     } else if (action === 'payment') {
       setCurrentPage('payments');
@@ -111,11 +121,12 @@ const AppContent: React.FC = () => {
 
       {currentPage === 'members' && (
         <Members
+          initialTab={membersTab}
           onSelectMember={handleSelectMember}
           onAddMember={() => handleNavigate('add-member')}
           onRenewMember={(id) => {
-            setSelectedMemberId(id);
-            handleNavigate('renew');
+            setRenewMemberId(id);
+            setCurrentPage('renew');
           }}
           onTakePayment={(id) => {
             setSelectedMemberId(id);
@@ -130,8 +141,8 @@ const AppContent: React.FC = () => {
           memberId={selectedMemberId}
           onBack={() => handleNavigate('members')}
           onRenew={(id) => {
-            setSelectedMemberId(id);
-            handleNavigate('renew');
+            setRenewMemberId(id);
+            setCurrentPage('renew');
           }}
           onTakePayment={(id) => {
             setSelectedMemberId(id);
@@ -139,6 +150,10 @@ const AppContent: React.FC = () => {
           }}
           onOpenWhatsApp={handleOpenWhatsApp}
           onViewReceipt={(receipt) => setActiveReceipt(receipt)}
+          onDeleteSuccess={(name, code) => {
+            showToast(`Member "${name}" (${code}) was successfully deleted.`, 'success');
+            handleNavigate('members');
+          }}
         />
       )}
 
@@ -146,6 +161,7 @@ const AppContent: React.FC = () => {
         <AddMember
           onBack={() => handleNavigate('members')}
           onSuccess={(member, receipt) => {
+            showToast(`Member "${member.full_name}" (${member.member_id}) was successfully added!`, 'success');
             if (receipt) setActiveReceipt(receipt);
             handleSelectMember(member.id);
           }}
@@ -154,10 +170,13 @@ const AppContent: React.FC = () => {
 
       {currentPage === 'renew' && (
         <RenewMembership
-          memberId={selectedMemberId || undefined}
+          key={renewMemberId ? `renew-${renewMemberId}` : 'renew-blank'}
+          memberId={renewMemberId || undefined}
           onBack={() => handleNavigate('members')}
           onSuccess={(member, receipt) => {
+            showToast(`Membership for "${member.full_name}" renewed successfully!`, 'success');
             if (receipt) setActiveReceipt(receipt);
+            setRenewMemberId(null);
             handleSelectMember(member.id);
           }}
         />
@@ -206,6 +225,7 @@ const AppContent: React.FC = () => {
         onClose={() => setWhatsAppTemplates(null)}
         templatesData={whatsAppTemplates}
       />
+
     </AppLayout>
   );
 };
@@ -213,7 +233,9 @@ const AppContent: React.FC = () => {
 export function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <ToastProvider>
+        <AppContent />
+      </ToastProvider>
     </AuthProvider>
   );
 }

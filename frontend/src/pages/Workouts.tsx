@@ -5,8 +5,10 @@ import {
 import { WorkoutPlan, Member } from '../types';
 import { api } from '../services/api';
 import { Modal } from '../components/common/Modal';
+import { useToast } from '../context/ToastContext';
 
 export const Workouts: React.FC = () => {
+  const { showToast } = useToast();
   const [workouts, setWorkouts] = useState<WorkoutPlan[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -64,8 +66,9 @@ export const Workouts: React.FC = () => {
       });
       setIsAddPlanModal(false);
       fetchWorkoutsData();
+      showToast(`Workout routine "${planForm.title}" created successfully!`, 'success');
     } catch (e) {
-      alert('Failed to create workout routine');
+      showToast('Failed to create workout routine.', 'error');
     }
   };
 
@@ -85,8 +88,9 @@ export const Workouts: React.FC = () => {
       });
       setIsAddExerciseModal(false);
       fetchWorkoutsData();
+      showToast(`Exercise "${exerciseForm.exercise_name}" added to routine!`, 'success');
     } catch (e) {
-      alert('Failed to add exercise');
+      showToast('Failed to add exercise.', 'error');
     }
   };
 

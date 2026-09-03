@@ -5,6 +5,7 @@ import {
   RefreshCw, User, Phone, Calendar, ArrowRight
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useToast } from '../../context/ToastContext';
 import confetti from 'canvas-confetti';
 
 interface QRScannerModalProps {
@@ -20,6 +21,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
   onRenewMember,
   onSuccess,
 }) => {
+  const { showToast } = useToast();
   const [activeMode, setActiveMode] = useState<'camera' | 'manual'>('camera');
   const [manualInput, setManualInput] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -80,6 +82,7 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           spread: 70,
           origin: { y: 0.6 },
         });
+        showToast(`Check-in successful for ${res.member?.name || identifier}!`, 'success');
         if (onSuccess) onSuccess();
       }
     } catch (err: any) {
@@ -90,8 +93,11 @@ export const QRScannerModal: React.FC<QRScannerModalProps> = ({
           message: errData.message || 'Membership Expired!',
           member: errData.member,
         });
+        showToast(`Membership expired for ${errData.member?.name || identifier}!`, 'error');
       } else {
-        setErrorMsg(errData?.message || 'Member not found or check-in failed.');
+        const msg = errData?.message || 'Member not found or check-in failed.';
+        setErrorMsg(msg);
+        showToast(msg, 'error');
       }
     } finally {
       setIsProcessing(false);

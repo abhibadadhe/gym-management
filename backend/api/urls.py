@@ -3,11 +3,13 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     CustomTokenObtainPairView, UserProfileView, GymSettingsView,
+    ForgotPasswordView, ResetPasswordView, ForgotUsernameView,
     DashboardStatsView, MemberViewSet, MembershipPlanViewSet,
     PaymentViewSet, AttendanceViewSet, TrainerViewSet,
-    WorkoutPlanViewSet, ExpenseViewSet, FinancialSummaryView,
+    WorkoutPlanViewSet, ExpenseViewSet, ExpenseCategoryViewSet, FinancialSummaryView,
     ReportsView, AuditLogViewSet, DatabaseBackupView,
-    SupplementCategoryViewSet, SupplementProductViewSet, SupplementSaleViewSet
+    SupplementCategoryViewSet, SupplementProductViewSet, SupplementSaleViewSet,
+    PublicReceiptPdfView, PublicInvoicePdfView
 )
 
 router = DefaultRouter()
@@ -17,6 +19,7 @@ router.register(r'payments', PaymentViewSet, basename='payment')
 router.register(r'attendance', AttendanceViewSet, basename='attendance')
 router.register(r'trainers', TrainerViewSet, basename='trainer')
 router.register(r'workouts', WorkoutPlanViewSet, basename='workout')
+router.register(r'expenses/categories', ExpenseCategoryViewSet, basename='expense-category')
 router.register(r'expenses', ExpenseViewSet, basename='expense')
 router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
 router.register(r'supplements/categories', SupplementCategoryViewSet, basename='supplement-category')
@@ -28,6 +31,9 @@ urlpatterns = [
     path('auth/login/', CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/profile/', UserProfileView.as_view(), name='user_profile'),
+    path('auth/forgot-password/', ForgotPasswordView.as_view(), name='forgot_password'),
+    path('auth/reset-password/', ResetPasswordView.as_view(), name='reset_password'),
+    path('auth/forgot-username/', ForgotUsernameView.as_view(), name='forgot_username'),
 
     # Core system endpoints
     path('settings/', GymSettingsView.as_view(), name='gym_settings'),
@@ -35,6 +41,10 @@ urlpatterns = [
     path('financials/', FinancialSummaryView.as_view(), name='financial_summary'),
     path('reports/', ReportsView.as_view(), name='reports'),
     path('backup/', DatabaseBackupView.as_view(), name='database_backup'),
+
+    # Public Receipt & Invoice PDF endpoints (accessible by members via WhatsApp)
+    path('public/receipts/<str:receipt_number>/pdf/', PublicReceiptPdfView.as_view(), name='public_receipt_pdf'),
+    path('public/invoices/<str:invoice_number>/pdf/', PublicInvoicePdfView.as_view(), name='public_invoice_pdf'),
 
     # Router endpoints
     path('', include(router.urls)),

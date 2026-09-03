@@ -173,6 +173,14 @@ export interface WorkoutPlan {
   exercises: WorkoutExercise[];
 }
 
+export interface ExpenseCategory {
+  id: number;
+  name: string;
+  description: string;
+  expenses_count?: number;
+  created_at?: string;
+}
+
 export interface Expense {
   id: number;
   expense_id: string;

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { RefreshCw, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { RefreshCw, ArrowLeft, CheckCircle2, AlertCircle, Search, X, ChevronDown } from 'lucide-react';
 import { Member, MembershipPlan, ReceiptData } from '../types';
 import { api } from '../services/api';
 import confetti from 'canvas-confetti';
@@ -26,6 +26,11 @@ export const RenewMembership: React.FC<RenewMembershipProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<string>('UPI');
   const [transactionRef, setTransactionRef] = useState<string>('');
   const [notes, setNotes] = useState<string>('Membership Renewal');
+
+  // Searchable Member Dropdown State
+  const [memberSearchQuery, setMemberSearchQuery] = useState<string>('');
+  const [isMemberDropdownOpen, setIsMemberDropdownOpen] = useState<boolean>(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -55,7 +60,14 @@ export const RenewMembership: React.FC<RenewMembershipProps> = ({
             const nextDay = new Date(m.expiry_date);
             nextDay.setDate(nextDay.getDate() + 1);
             setStartDate(nextDay.toISOString().split('T')[0]);
+          } else {
+            setStartDate(new Date().toISOString().split('T')[0]);
           }
+        } else {
+          setSelectedMember(null);
+          setSelectedMemberId('');
+          setMemberSearchQuery('');
+          setStartDate(new Date().toISOString().split('T')[0]);
         }
       } catch (err) {
         console.error(err);
@@ -86,6 +98,26 @@ export const RenewMembership: React.FC<RenewMembershipProps> = ({
       console.error(e);
     }
   };
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsMemberDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredMembers = members.filter((m) => {
+    if (!memberSearchQuery.trim()) return true;
+    const q = memberSearchQuery.toLowerCase().trim();
+    return (
+      m.full_name?.toLowerCase().includes(q) ||
+      m.phone?.includes(q) ||
+      m.member_id?.toLowerCase().includes(q)
+    );
+  });
 
   const selectedPlan = plans.find((p) => p.id.toString() === selectedPlanId);
   const planPrice = Number(selectedPlan?.price || 0);
@@ -140,7 +172,7 @@ export const RenewMembership: React.FC<RenewMembershipProps> = ({
       if (res.receipt?.id) {
         try {
           fullReceipt = await api.getReceipt(res.receipt.id);
-        } catch (e) {}
+        } catch (e) { }
       }
 
       onSuccess(res.member, fullReceipt);
@@ -171,9 +203,9 @@ export const RenewMembership: React.FC<RenewMembershipProps> = ({
           <ArrowLeft className="w-4 h-4" />
           <span>Back</span>
         </button>
-        <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+        {/* <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
           Non-Destructive Subscription Extension
-        </span>
+        </span> */}
       </div>
 
       <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm">
@@ -195,24 +227,138 @@ export const RenewMembership: React.FC<RenewMembershipProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6 text-xs">
-          {/* Member Selection */}
-          <div>
+          {/* Searchable Member Selection */}
+          <div className="relative" ref={dropdownRef}>
             <label className="block text-slate-700 font-semibold mb-1">
               Select Member <span className="text-rose-600">*</span>
             </label>
-            <select
+
+            {selectedMember ? (
+              /* Selected Member Card View */
+              <div className="flex items-center justify-between p-3.5 bg-orange-50/70 border border-orange-200 rounded-2xl shadow-sm">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-orange-500 text-white font-black flex items-center justify-center text-sm shadow-sm flex-shrink-0">
+                    {selectedMember.first_name?.charAt(0) || 'M'}
+                  </div>
+                  <div className="truncate">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-slate-900 text-xs">{selectedMember.full_name}</span>
+                      <span className="font-mono text-[10px] font-bold text-orange-600 bg-orange-100 px-1.5 py-0.5 rounded border border-orange-200">
+                        {selectedMember.member_id}
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500 block truncate">
+                      +91 {selectedMember.phone} • Status:{' '}
+                      <span className="font-bold text-slate-700">{selectedMember.membership_status}</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* Change button is ONLY rendered if accessed from Top Bar (!memberId) */}
+                {!memberId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedMemberId('');
+                      setSelectedMember(null);
+                      setMemberSearchQuery('');
+                      setIsMemberDropdownOpen(true);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-600 hover:text-rose-600 text-[11px] font-bold flex items-center gap-1.5 transition-all shadow-sm flex-shrink-0 ml-2"
+                    title="Change Selected Member"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span>Change</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              /* Search Input & Dropdown */
+              <div>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                    <Search className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="text"
+                    value={memberSearchQuery}
+                    onChange={(e) => {
+                      setMemberSearchQuery(e.target.value);
+                      setIsMemberDropdownOpen(true);
+                    }}
+                    onFocus={() => setIsMemberDropdownOpen(true)}
+                    placeholder="Search by member name, phone number (+91), or Member ID (e.g. MF20260001)..."
+                    className="w-full pl-10 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white transition-colors"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-slate-400">
+                    <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isMemberDropdownOpen ? 'rotate-180' : ''}`} />
+                  </div>
+                </div>
+
+                {/* Dropdown Menu */}
+                {isMemberDropdownOpen && (
+                  <div className="absolute left-0 right-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-2xl shadow-xl max-h-64 overflow-y-auto divide-y divide-slate-100 animate-in fade-in slide-in-from-top-2 duration-150">
+                    {filteredMembers.length > 0 ? (
+                      filteredMembers.map((m) => {
+                        const statusColors: Record<string, string> = {
+                          ACTIVE: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                          EXPIRING_SOON: 'bg-amber-50 text-amber-700 border-amber-200',
+                          EXPIRED: 'bg-rose-50 text-rose-700 border-rose-200',
+                          NO_MEMBERSHIP: 'bg-slate-100 text-slate-600 border-slate-200',
+                        };
+                        const badgeStyle = statusColors[m.membership_status] || statusColors.ACTIVE;
+
+                        return (
+                          <div
+                            key={m.id}
+                            onClick={() => {
+                              handleMemberSelect(m.id.toString());
+                              setIsMemberDropdownOpen(false);
+                            }}
+                            className="p-3 hover:bg-orange-50/70 cursor-pointer flex items-center justify-between transition-colors group"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-8 h-8 rounded-xl bg-orange-100 group-hover:bg-orange-200 text-orange-700 font-bold flex items-center justify-center text-xs flex-shrink-0 transition-colors">
+                                {m.first_name?.charAt(0) || 'M'}
+                              </div>
+                              <div className="truncate">
+                                <span className="font-bold text-slate-900 text-xs block group-hover:text-orange-600 transition-colors truncate">
+                                  {m.full_name}
+                                </span>
+                                <span className="text-[11px] text-slate-500 flex items-center gap-1.5">
+                                  <span className="font-mono text-orange-600 font-semibold">{m.member_id}</span>
+                                  <span>•</span>
+                                  <span>+91 {m.phone}</span>
+                                </span>
+                              </div>
+                            </div>
+
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex-shrink-0 ml-2 ${badgeStyle}`}>
+                              {m.membership_status}
+                            </span>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="p-4 text-center text-slate-400 text-xs">
+                        No members found matching &ldquo;{memberSearchQuery}&rdquo;.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Hidden field for HTML5 form validation */}
+            <input
+              type="text"
               value={selectedMemberId}
-              onChange={(e) => handleMemberSelect(e.target.value)}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:border-orange-500 focus:bg-white"
               required
-            >
-              <option value="">-- Choose Member --</option>
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.full_name} ({m.member_id}) - {m.phone} [{m.membership_status}]
-                </option>
-              ))}
-            </select>
+              readOnly
+              onChange={() => { }}
+              className="sr-only"
+              tabIndex={-1}
+            />
           </div>
 
           {/* Current Membership Snapshot */}
@@ -255,11 +401,10 @@ export const RenewMembership: React.FC<RenewMembershipProps> = ({
                   <div
                     key={p.id}
                     onClick={() => handlePlanChange(p.id.toString())}
-                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${
-                      isSelected
-                        ? 'bg-emerald-50/70 border-emerald-500 shadow-sm'
-                        : 'bg-slate-50 border-slate-200 hover:border-slate-300'
-                    }`}
+                    className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${isSelected
+                      ? 'bg-emerald-50/70 border-emerald-500 shadow-sm'
+                      : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                      }`}
                   >
                     <div className="flex justify-between items-start">
                       <span className="font-bold text-slate-900 text-xs">{p.name}</span>
