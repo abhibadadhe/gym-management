@@ -133,6 +133,10 @@ class MemberDetailSerializer(serializers.ModelSerializer):
     full_name = serializers.ReadOnlyField()
     membership_status = serializers.ReadOnlyField()
     days_remaining = serializers.ReadOnlyField()
+    current_plan = serializers.SerializerMethodField()
+    expiry_date = serializers.SerializerMethodField()
+    start_date = serializers.SerializerMethodField()
+    pending_amount = serializers.SerializerMethodField()
     trainer_name = serializers.ReadOnlyField(source='assigned_trainer.name')
     memberships = MemberMembershipSerializer(many=True, read_only=True)
     payments = PaymentSerializer(many=True, read_only=True)
@@ -147,6 +151,22 @@ class MemberDetailSerializer(serializers.ModelSerializer):
         model = Member
         fields = '__all__'
         read_only_fields = ['member_id', 'qr_token', 'created_at', 'updated_at']
+
+    def get_current_plan(self, obj):
+        curr = obj.current_membership
+        return curr.plan.name if curr and curr.plan else None
+
+    def get_expiry_date(self, obj):
+        curr = obj.current_membership
+        return curr.end_date if curr else None
+
+    def get_start_date(self, obj):
+        curr = obj.current_membership
+        return curr.start_date if curr else None
+
+    def get_pending_amount(self, obj):
+        curr = obj.current_membership
+        return float(curr.pending_amount) if curr else 0.0
 
     def get_attendance_records(self, obj):
         # Return recent 15 check-ins

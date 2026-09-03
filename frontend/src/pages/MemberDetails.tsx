@@ -139,6 +139,10 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
     );
   }
 
+  const activeMembership = member.memberships?.find((m: any) => m.status === 'ACTIVE' || m.status === 'EXPIRING_SOON') || member.memberships?.[0];
+  const currentPlan = member.current_plan || activeMembership?.plan_name || 'None';
+  const pendingDue = Number(member.pending_amount ?? member.total_pending ?? activeMembership?.pending_amount ?? 0) || 0;
+
   return (
     <div className="space-y-6 pb-12">
       {/* Top Header & Navigation */}
@@ -153,13 +157,13 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 flex-wrap">
-          {Number(member.pending_amount) > 0 && (
+          {pendingDue > 0 && (
             <button
               onClick={() => onTakePayment(member.id)}
               className="flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all shadow-sm"
             >
               <CreditCard className="w-3.5 h-3.5" />
-              <span>Collect ₹{Number(member.pending_amount).toLocaleString('en-IN')} Due</span>
+              <span>Collect ₹{pendingDue.toLocaleString('en-IN')} Due</span>
             </button>
           )}
 
@@ -238,10 +242,14 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
             <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
               <span className="text-[10px] text-slate-400 uppercase font-bold block">Current Plan</span>
               <span className="font-bold text-slate-900 text-sm block mt-0.5">
-                {member.current_plan || 'None'}
+                {currentPlan}
               </span>
               <span className="text-[10px] text-slate-500 block">
-                {member.days_remaining > 0 ? `${member.days_remaining} Days Left` : 'Expired'}
+                {member.days_remaining > 0
+                  ? `${member.days_remaining} Days Left`
+                  : currentPlan !== 'None'
+                  ? 'Active'
+                  : 'No Active Plan'}
               </span>
             </div>
 
@@ -249,12 +257,12 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
               <span className="text-[10px] text-slate-400 uppercase font-bold block">Pending Due</span>
               <span
                 className={`font-black text-sm block mt-0.5 ${
-                  Number(member.pending_amount) > 0 ? 'text-rose-600' : 'text-emerald-600'
+                  pendingDue > 0 ? 'text-rose-600' : 'text-emerald-600'
                 }`}
               >
-                ₹{Number(member.pending_amount).toLocaleString('en-IN')}
+                ₹{pendingDue.toLocaleString('en-IN')}
               </span>
-              {Number(member.pending_amount) > 0 ? (
+              {pendingDue > 0 ? (
                 <button
                   onClick={() => onTakePayment(member.id)}
                   className="text-[10px] font-bold text-rose-600 underline block"
@@ -338,7 +346,7 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
               </div>
               <div className="flex justify-between py-1 border-b border-slate-50">
                 <span>Current Plan:</span>
-                <span className="font-semibold text-orange-600">{member.current_plan || 'None'}</span>
+                <span className="font-semibold text-orange-600">{currentPlan}</span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-50">
                 <span>Lead Source:</span>
