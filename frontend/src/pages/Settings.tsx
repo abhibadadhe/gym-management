@@ -301,7 +301,7 @@ export const Settings: React.FC = () => {
       </div>
 
       {/* Security & Inactivity Auto-Logout Section */}
-      <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-5 no-print">
+      {/* <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-5 no-print">
         <div className="border-b border-slate-100 pb-4 space-y-1">
           <h3 className="text-base font-bold text-slate-900 font-heading flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-orange-600" />
@@ -348,7 +348,7 @@ export const Settings: React.FC = () => {
             </select>
           </div>
         </div>
-      </div>
+      </div> */}
 
       {/* Database Backup & Export Section (Excel & PDF) */}
       <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
