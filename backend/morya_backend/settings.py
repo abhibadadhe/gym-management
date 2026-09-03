@@ -182,10 +182,19 @@ else:
     CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https:\/\/.*\.vercel\.app$",
+]
 
 csrf_trusted_env = os.environ.get('CSRF_TRUSTED_ORIGINS')
 if csrf_trusted_env:
     CSRF_TRUSTED_ORIGINS = [o.strip() for o in csrf_trusted_env.split(',') if o.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        'http://localhost:5173',
+        'https://*.vercel.app',
+    ]
+
 
 LANGUAGE_CODE = 'en-in'
 TIME_ZONE = 'Asia/Kolkata'

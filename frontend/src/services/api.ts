@@ -8,7 +8,8 @@ import {
   SupplementSummary, SupplementReceiptData
 } from '../types';
 
-const API_BASE = '/api';
+const envApiUrl = (import.meta as any).env?.VITE_API_BASE_URL;
+const API_BASE = envApiUrl ? `${envApiUrl.replace(/\/+$/, '')}/api` : '/api';
 
 export const apiClient = axios.create({
   baseURL: API_BASE,
