@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Settings as SettingsIcon, Save, Database, Download,
   CheckCircle2, FileSpreadsheet, Printer, Dumbbell, RefreshCw,
-  Receipt, Users, CreditCard, Flame
+  Receipt, Users, CreditCard, Flame, ShieldCheck, Clock
 } from 'lucide-react';
 import { GymSettings, Member, Payment, Expense, MembershipPlan, SupplementSale } from '../types';
 import { api } from '../services/api';
@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
 export const Settings: React.FC = () => {
-  const { gym, refreshGymSettings } = useAuth();
+  const { gym, refreshGymSettings, inactivityTimeoutMinutes, setInactivityTimeout } = useAuth();
   const { showToast } = useToast();
   const [formData, setFormData] = useState<GymSettings>({
     name: 'Morya Fitness',
@@ -298,6 +298,56 @@ export const Settings: React.FC = () => {
             </button>
           </div>
         </form>
+      </div>
+
+      {/* Security & Inactivity Auto-Logout Section */}
+      <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-5 no-print">
+        <div className="border-b border-slate-100 pb-4 space-y-1">
+          <h3 className="text-base font-bold text-slate-900 font-heading flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-orange-600" />
+            Security & Session Auto-Logout
+          </h3>
+          <p className="text-xs text-slate-500">
+            Automatically logs out inactive sessions to protect confidential member records and financial collections on shared reception computers.
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-slate-50/80 border border-slate-200">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-orange-100 text-orange-600 flex items-center justify-center flex-shrink-0 shadow-xs">
+              <Clock className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-black text-slate-900">Auto-Logout Inactivity Duration</h4>
+              <p className="text-[11px] text-slate-500">
+                A 2-minute warning countdown with a "Stay Logged In" button will appear before auto-logout occurs.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={inactivityTimeoutMinutes}
+              onChange={(e) => {
+                const mins = Number(e.target.value);
+                setInactivityTimeout(mins);
+                showToast(
+                  mins === 0
+                    ? 'Session auto-logout disabled.'
+                    : `Auto-logout set to ${mins} minutes of inactivity.`,
+                  'success'
+                );
+              }}
+              className="py-2.5 px-3.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-orange-500 shadow-xs cursor-pointer"
+            >
+              <option value={15}>15 Minutes</option>
+              <option value={30}>30 Minutes (Recommended)</option>
+              <option value={60}>1 Hour</option>
+              <option value={120}>2 Hours</option>
+              <option value={0}>Disabled (Never Log Out)</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Database Backup & Export Section (Excel & PDF) */}

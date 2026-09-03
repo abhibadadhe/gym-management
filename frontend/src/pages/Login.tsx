@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Lock, User, ArrowRight, AlertCircle, Sparkles,
-  Mail, KeyRound, CheckCircle2, Eye, EyeOff, RefreshCw, X, ShieldCheck
+  Mail, KeyRound, CheckCircle2, Eye, EyeOff, RefreshCw, X, ShieldCheck, Clock
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -12,8 +12,18 @@ export const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
+  const [securityNotice, setSecurityNotice] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  useEffect(() => {
+    const notice = localStorage.getItem('mf_logout_notice');
+    if (notice) {
+      setSecurityNotice(notice);
+      localStorage.removeItem('mf_logout_notice');
+    }
+  }, []);
+
 
   // Recovery Modal State ('none' | 'password' | 'username')
   const [modalType, setModalType] = useState<'none' | 'password' | 'username'>('none');
@@ -188,6 +198,14 @@ export const Login: React.FC = () => {
             </p>
           </div>
         </div>
+
+        {/* Inactivity Security Notice */}
+        {securityNotice && (
+          <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2">
+            <Clock className="w-4 h-4 flex-shrink-0 text-amber-600" />
+            <span className="font-semibold">{securityNotice}</span>
+          </div>
+        )}
 
         {/* Global Success Notification */}
         {successNotice && (
