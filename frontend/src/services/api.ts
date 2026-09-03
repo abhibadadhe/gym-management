@@ -8,8 +8,12 @@ import {
   SupplementSummary, SupplementReceiptData
 } from '../types';
 
-const envApiUrl = (import.meta as any).env?.VITE_API_BASE_URL;
+const rawEnvUrl = (import.meta as any).env?.VITE_API_BASE_URL;
+// If the app is loaded over HTTPS (e.g. on Vercel) and the env URL is insecure HTTP, fall back to '/api' to prevent browser Mixed Content blockage
+const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+const envApiUrl = (isHttps && rawEnvUrl?.startsWith('http://')) ? '' : rawEnvUrl;
 const API_BASE = envApiUrl ? `${envApiUrl.replace(/\/+$/, '')}/api` : '/api';
+
 
 export const apiClient = axios.create({
   baseURL: API_BASE,
