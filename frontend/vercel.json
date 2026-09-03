@@ -2,15 +2,15 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "http://187.127.173.151:3001/api/:path*"
+      "destination": "/api/[...path]"
     },
     {
       "source": "/media/:path*",
-      "destination": "http://187.127.173.151:3001/media/:path*"
+      "destination": "/api/[...path]"
     },
     {
       "source": "/static/:path*",
-      "destination": "http://187.127.173.151:3001/static/:path*"
+      "destination": "/api/[...path]"
     },
     {
       "source": "/(.*)",

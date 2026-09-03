@@ -1,5 +1,6 @@
 import json
 import random
+import re
 from decimal import Decimal
 from datetime import date, datetime, timedelta
 from django.db.models import Sum, Count, Q, F
@@ -18,7 +19,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import (
-    User, GymSettings, Trainer, MembershipPlan, Member,
+    User, UserRole, GymSettings, Trainer, MembershipPlan, Member,
     MemberMembership, Payment, Attendance, WorkoutPlan,
     WorkoutExercise, Expense, ExpenseCategory, AuditLog,
     SupplementCategory, SupplementProduct, SupplementSale, SupplementSaleItem,
@@ -77,11 +78,42 @@ class ForgotPasswordView(APIView):
     def post(self, request):
         identifier = request.data.get('identifier', '').strip()
         if not identifier:
-            return Response({'detail': 'Please provide your registered Gmail address or username.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'Please provide your registered Gmail address, username, or phone number.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        user = User.objects.filter(Q(email__iexact=identifier) | Q(username__iexact=identifier)).first()
-        if not user or not user.email:
-            return Response({'detail': 'No registered account found matching this email or username.'}, status=status.HTTP_404_NOT_FOUND)
+        clean_phone = re.sub(r'[\s\-\+\(\)]', '', identifier)
+
+        # 1. Direct search by email, username, or phone number
+        user = User.objects.filter(
+            Q(email__iexact=identifier) |
+            Q(username__iexact=identifier) |
+            Q(phone__iexact=identifier) |
+            (Q(phone__endswith=clean_phone[-10:]) if len(clean_phone) >= 10 else Q(pk__in=[]))
+        ).first()
+
+        # 2. Check against server configured Gmail (EMAIL_HOST_USER) or GymSettings email
+        from django.conf import settings
+        configured_email = getattr(settings, 'EMAIL_HOST_USER', '').strip()
+        gym_settings = GymSettings.get_settings()
+        gym_email = (gym_settings.email or '').strip()
+
+        if not user:
+            # If the entered identifier matches the configured system email or gym official email
+            if (configured_email and identifier.lower() == configured_email.lower()) or (gym_email and identifier.lower() == gym_email.lower()):
+                user = User.objects.filter(Q(is_superuser=True) | Q(role=UserRole.OWNER) | Q(username='admin')).first()
+                if user:
+                    user.email = identifier
+                    user.save(update_fields=['email'])
+
+        if not user:
+            return Response({'detail': 'No registered account found matching this username, email, or phone number.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # 3. If user exists but email is missing or set to placeholder domain (@moryafitness.com)
+        if (not user.email or user.email.endswith('@moryafitness.com')) and configured_email and (user.is_superuser or user.role == UserRole.OWNER or user.username == 'admin'):
+            user.email = configured_email
+            user.save(update_fields=['email'])
+
+        if not user.email:
+            return Response({'detail': f'Account "{user.username}" exists, but has no email address associated with it. Please contact the administrator.'}, status=status.HTTP_400_BAD_REQUEST)
 
         otp = f"{random.randint(100000, 999999)}"
 
@@ -106,8 +138,7 @@ class ForgotPasswordView(APIView):
 
         email_sent = False
         try:
-            from django.conf import settings
-            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or 'noreply@moryafitness.com'
+            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or configured_email or 'noreply@moryafitness.com'
             send_mail(subject, message, from_email, [user.email], fail_silently=False)
             email_sent = True
         except Exception as e:
@@ -138,7 +169,22 @@ class ResetPasswordView(APIView):
         if len(new_password) < 4:
             return Response({'detail': 'Password must be at least 4 characters long.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        user = User.objects.filter(Q(email__iexact=identifier) | Q(username__iexact=identifier)).first()
+        clean_phone = re.sub(r'[\s\-\+\(\)]', '', identifier)
+        user = User.objects.filter(
+            Q(email__iexact=identifier) |
+            Q(username__iexact=identifier) |
+            Q(phone__iexact=identifier) |
+            (Q(phone__endswith=clean_phone[-10:]) if len(clean_phone) >= 10 else Q(pk__in=[]))
+        ).first()
+
+        if not user:
+            from django.conf import settings
+            configured_email = getattr(settings, 'EMAIL_HOST_USER', '').strip()
+            gym_settings = GymSettings.get_settings()
+            gym_email = (gym_settings.email or '').strip()
+            if (configured_email and identifier.lower() == configured_email.lower()) or (gym_email and identifier.lower() == gym_email.lower()):
+                user = User.objects.filter(Q(is_superuser=True) | Q(role=UserRole.OWNER) | Q(username='admin')).first()
+
         if not user:
             return Response({'detail': 'Account not found.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -166,6 +212,18 @@ class ForgotUsernameView(APIView):
             return Response({'detail': 'Please provide your registered Gmail address.'}, status=status.HTTP_400_BAD_REQUEST)
 
         users = User.objects.filter(email__iexact=email)
+        if not users.exists():
+            from django.conf import settings
+            configured_email = getattr(settings, 'EMAIL_HOST_USER', '').strip()
+            gym_settings = GymSettings.get_settings()
+            gym_email = (gym_settings.email or '').strip()
+            if (configured_email and email.lower() == configured_email.lower()) or (gym_email and email.lower() == gym_email.lower()):
+                admin_user = User.objects.filter(Q(is_superuser=True) | Q(role=UserRole.OWNER) | Q(username='admin')).first()
+                if admin_user:
+                    admin_user.email = email
+                    admin_user.save(update_fields=['email'])
+                    users = User.objects.filter(id=admin_user.id)
+
         if not users.exists():
             return Response({'detail': 'No account registered with this email address.'}, status=status.HTTP_404_NOT_FOUND)
 

@@ -39,12 +39,15 @@ class Command(BaseCommand):
         User.objects.exclude(username="admin").delete()
 
         # 3. Ensure Admin account is intact and ready
+        from django.conf import settings
+        admin_email = getattr(settings, 'EMAIL_HOST_USER', None) or "admin@moryafitness.com"
+
         admin_user, created = User.objects.get_or_create(
             username="admin",
             defaults={
-                "email": "gokul.gugale@moryafitness.com",
-                "first_name": "Gokul",
-                "last_name": "Gugale",
+                "email": admin_email,
+                "first_name": "Harsh",
+                "last_name": "Patil (Owner)",
                 "role": UserRole.OWNER,
                 "is_staff": True,
                 "is_superuser": True,
@@ -52,9 +55,10 @@ class Command(BaseCommand):
         )
         admin_user.set_password("admin123")
         admin_user.role = UserRole.OWNER
-        admin_user.first_name = "Gokul"
-        admin_user.last_name = "Gugale"
-        admin_user.email = "gokul.gugale@moryafitness.com"
+        admin_user.is_staff = True
+        admin_user.is_superuser = True
+        if not admin_user.email or "gokul" in admin_user.email:
+            admin_user.email = admin_email
         admin_user.save()
 
         # 4. Ensure Gym Settings are ready
@@ -63,7 +67,7 @@ class Command(BaseCommand):
         gym_settings.tagline = "Premium Gym & Fitness Center"
         gym_settings.address = "Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103"
         gym_settings.phone = "+91 98220 12345"
-        gym_settings.email = "contact@moryafitness.com"
+        gym_settings.email = getattr(settings, 'EMAIL_HOST_USER', None) or "contact@moryafitness.com"
         gym_settings.upi_id = "moryafitness@okhdfcbank"
         gym_settings.receipt_prefix = "MF-REC-"
         gym_settings.save()

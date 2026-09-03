@@ -373,7 +373,7 @@ export const Login: React.FC = () => {
             {resetStep === 'request' && (
               <form onSubmit={handleRequestResetOtp} className="space-y-4 text-xs">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1.5">Registered Gmail</label>
+                  <label className="block text-slate-700 font-bold mb-1.5">Registered Gmail, Username, or Phone</label>
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
                       <Mail className="w-4 h-4" />
@@ -382,7 +382,7 @@ export const Login: React.FC = () => {
                       type="text"
                       value={resetIdentifier}
                       onChange={(e) => setResetIdentifier(e.target.value)}
-                      placeholder="e.g. xyz@gmail.com"
+                      placeholder="e.g. admin, xyz@gmail.com, or 98220..."
                       className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white font-medium"
                       required
                       autoFocus
