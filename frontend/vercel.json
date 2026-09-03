@@ -1,19 +1,7 @@
 {
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "http://187.127.173.151:3001/api/:path*"
-    },
-    {
-      "source": "/media/:path*",
-      "destination": "http://187.127.173.151:3001/media/:path*"
-    },
-    {
-      "source": "/static/:path*",
-      "destination": "http://187.127.173.151:3001/static/:path*"
-    },
-    {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]
