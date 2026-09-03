@@ -17,6 +17,15 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
   const gymPhone = receipt.gym?.phone || '+91 98220 12345';
   const gymUpi = receipt.gym?.upi_id || 'moryafitness@okhdfcbank';
 
+  // Strict UPI or Cash
+  const formatPaymentMethod = (method: any): 'UPI' | 'Cash' => {
+    if (!method) return 'UPI';
+    const s = String(method).toUpperCase();
+    if (s.includes('CASH')) return 'Cash';
+    return 'UPI';
+  };
+  const paymentMethod = formatPaymentMethod(receipt.payment_method);
+
   const handlePrint = () => {
     const printWindow = window.open('', '_blank', 'width=800,height=900');
     if (!printWindow) {
@@ -197,11 +206,51 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
             }
             .signature {
               text-align: right;
+              display: flex;
+              flex-direction: column;
+              align-items: flex-end;
+            }
+            .stamp-seal-container {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              margin-bottom: 4px;
+              transform: rotate(-6deg);
+            }
+            .stamp-seal {
+              width: 64px;
+              height: 64px;
+              border-radius: 50%;
+              border: 2px solid #1e3a8a;
+              padding: 2px;
+              background: #ffffff;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              box-shadow: 0 0 0 2px rgba(30, 58, 138, 0.2);
+            }
+            .stamp-seal img {
+              width: 100%;
+              height: 100%;
+              border-radius: 50%;
+              object-fit: cover;
+            }
+            .stamp-tag {
+              font-size: 7.5px;
+              font-weight: 800;
+              color: #1e3a8a;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              margin-top: 2px;
+              border: 1px solid #1e3a8a;
+              padding: 1px 5px;
+              border-radius: 4px;
+              background: #eff6ff;
             }
             .sig-line {
               width: 120px;
               border-bottom: 1px solid #0f172a;
-              margin: 0 0 4px auto;
+              margin: 4px 0 3px auto;
             }
           </style>
         </head>
@@ -252,7 +301,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
 
             <div class="totals-container">
               <div class="payment-info">
-                <strong>Payment Mode:</strong> ${receipt.payment_method}<br />
+                <strong>Payment Mode:</strong> ${paymentMethod}<br />
                 <strong>Cashier / Sold By:</strong> ${receipt.sold_by}<br />
                 ${receipt.notes ? `<strong>Notes:</strong> ${receipt.notes}` : ''}
               </div>
@@ -281,6 +330,12 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                 • Please keep this invoice for your nutritional records.
               </div>
               <div class="signature">
+                <div class="stamp-seal-container">
+                  <div class="stamp-seal">
+                    <img src="/logo.png" alt="Morya Fitness Seal" />
+                  </div>
+                  <div class="stamp-tag">OFFICIAL SEAL • SINNAR</div>
+                </div>
                 <div class="sig-line"></div>
                 <strong>Authorized Signatory</strong>
               </div>

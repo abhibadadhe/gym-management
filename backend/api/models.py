@@ -221,8 +221,8 @@ class MemberMembership(models.Model):
 
 class Payment(models.Model):
     PAYMENT_METHOD_CHOICES = [
+        ('UPI', 'UPI'),
         ('CASH', 'Cash'),
-        ('UPI', 'UPI (GPay / PhonePe / Paytm)'),
         ('CARD', 'Debit / Credit Card'),
         ('BANK_TRANSFER', 'Bank Transfer / NEFT'),
     ]
@@ -427,8 +427,8 @@ class SupplementProduct(models.Model):
 
 class SupplementSale(models.Model):
     PAYMENT_METHOD_CHOICES = [
+        ('UPI', 'UPI'),
         ('CASH', 'Cash'),
-        ('UPI', 'UPI / GPay / PhonePe / Paytm'),
         ('CARD', 'Credit / Debit Card'),
         ('NETBANKING', 'Net Banking / Transfer'),
     ]

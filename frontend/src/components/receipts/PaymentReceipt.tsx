@@ -33,7 +33,21 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
 
   const planName = receipt.plan?.name || 'Gym Membership';
   const durationDays = receipt.plan?.duration_days ?? 30;
-  const paymentMethod = receipt.payment_method || receipt.payment?.method || 'UPI';
+
+  // Strict UPI or Cash formatting (no Paytm/PhonePe/GPay or extra text)
+  const formatPaymentMethod = (method: any): 'UPI' | 'Cash' => {
+    if (!method) return 'UPI';
+    const s = String(method).toUpperCase();
+    if (s.includes('CASH')) return 'Cash';
+    return 'UPI';
+  };
+  const paymentMethod = formatPaymentMethod(
+    receipt.payment_method ||
+    receipt.payment?.payment_method ||
+    receipt.payment?.method ||
+    'UPI'
+  );
+
   const transactionRef = receipt.transaction_ref || receipt.payment?.transaction_ref || '';
   const cashierName = receipt.received_by || receipt.payment?.received_by || 'Admin';
 
@@ -272,11 +286,52 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
             }
             .signature {
               text-align: right;
+              display: flex;
+              flex-direction: column;
+              align-items: flex-end;
+            }
+            .stamp-seal-container {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              margin-bottom: 6px;
+              transform: rotate(-6deg);
+            }
+            .stamp-seal {
+              width: 72px;
+              height: 72px;
+              border-radius: 50%;
+              border: 2.5px solid #1e3a8a;
+              padding: 2px;
+              background: #ffffff;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              box-shadow: 0 0 0 2px rgba(30, 58, 138, 0.2);
+            }
+            .stamp-seal img {
+              width: 100%;
+              height: 100%;
+              border-radius: 50%;
+              object-fit: cover;
+            }
+            .stamp-tag {
+              font-size: 8px;
+              font-weight: 800;
+              color: #1e3a8a;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              margin-top: 3px;
+              border: 1px solid #1e3a8a;
+              padding: 1px 6px;
+              border-radius: 4px;
+              background: #eff6ff;
             }
             .sig-line {
               width: 140px;
               border-bottom: 1px solid #0f172a;
-              margin-bottom: 6px;
+              margin-top: 4px;
+              margin-bottom: 4px;
               margin-left: auto;
             }
             .sig-text {
@@ -387,6 +442,12 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
                 3. Official computer-generated receipt for Morya Fitness, Sinnar.
               </div>
               <div class="signature">
+                <div class="stamp-seal-container">
+                  <div class="stamp-seal">
+                    <img src="/logo.png" alt="Morya Fitness Seal" />
+                  </div>
+                  <div class="stamp-tag">OFFICIAL SEAL • SINNAR</div>
+                </div>
                 <div class="sig-line"></div>
                 <div class="sig-text">Authorized Signature & Seal</div>
                 <div style="font-size: 9px; color: #64748b; margin-top: 2px;">Morya Fitness, Sinnar</div>
@@ -556,9 +617,18 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
             <p>3. Official receipt issued by Morya Fitness, Sinnar.</p>
           </div>
 
-          <div className="text-right space-y-3">
-            <div className="w-28 h-10 border-b border-slate-300 ml-auto" />
-            <p className="font-bold text-slate-700">Authorized Signature & Seal</p>
+          <div className="text-right space-y-2 flex flex-col items-end">
+            <div className="inline-flex flex-col items-center -rotate-6 transition-transform hover:rotate-0">
+              <div className="w-16 h-16 rounded-full border-2 border-blue-900 p-0.5 bg-white shadow-sm ring-2 ring-blue-100 flex items-center justify-center overflow-hidden">
+                <img src="/logo.png" alt="Morya Fitness Seal" className="w-full h-full object-cover rounded-full" />
+              </div>
+              <span className="text-[8px] font-black tracking-wider text-blue-900 uppercase mt-1 px-2 py-0.5 bg-blue-50 border border-blue-300 rounded">
+                OFFICIAL SEAL • SINNAR
+              </span>
+            </div>
+            <div className="w-32 border-b border-slate-300" />
+            <p className="font-bold text-slate-800 text-xs">Authorized Signature & Seal</p>
+            <p className="text-[9px] text-slate-500">Morya Fitness, Sinnar</p>
           </div>
         </div>
       </div>
