@@ -18,7 +18,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
   const gymName = receipt.gym?.name || 'Morya Fitness';
   const gymTagline = receipt.gym?.tagline || 'Premium Gym & Fitness Center';
   const gymAddress = receipt.gym?.address || 'Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103';
-  const gymPhone = receipt.gym?.phone || '+91 98220 12345';
+  const gymPhone = receipt.gym?.phone || '+91 7219188002';
   const gymUpi = receipt.gym?.upi_id || 'moryafitness@okhdfcbank';
 
   // Strict UPI or Cash
@@ -31,9 +31,16 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
   const paymentMethod = formatPaymentMethod(receipt.payment_method);
 
   const [isSending, setIsSending] = useState(false);
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+
+  const baseUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'https://moryafitness.vercel.app'
+    : window.location.origin;
+  const publicPdfUrl = `${baseUrl}/api/public/invoices/${encodeURIComponent(receipt.invoice_number)}/pdf/`;
 
   const handleSendWhatsApp = async () => {
     setIsSending(true);
+    setNoticeMessage(null);
     try {
       const rawPhone = receipt.customer_phone || '';
       const cleanPhone = String(rawPhone).replace(/\D/g, '');
@@ -42,9 +49,6 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
         : cleanPhone.length === 10
           ? `91${cleanPhone}`
           : cleanPhone;
-
-      const origin = window.location.origin;
-      const pdfUrl = `${origin}/api/public/invoices/${encodeURIComponent(receipt.invoice_number)}/pdf/`;
 
       const itemsText = receipt.items
         .map((item, idx) => `${idx + 1}. *${item.name}* (Qty: ${item.quantity}) — ₹${item.subtotal.toLocaleString('en-IN')}`)
@@ -60,43 +64,52 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
         `*Purchased Items:*\n${itemsText}\n\n` +
         `💰 *Total Amount Paid:* ₹${receipt.final_amount.toLocaleString('en-IN')}\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `📥 *OFFICIAL INVOICE (PDF):*\n` +
+        `${publicPdfUrl}\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `📍 *Store:* ${gymAddress}\n` +
         `📞 *Helpdesk:* ${gymPhone}\n\n` +
         `_Authentic fitness supplements guaranteed by ${gymName}!_ 💪`;
 
-      const saleId = (receipt as any).id || (receipt as any).sale_id;
-      if (saleId) {
-        try {
-          const blob = await api.getSupplementInvoicePdf(saleId);
-          const fileName = `Invoice_${receipt.invoice_number}.pdf`;
-          const file = new File([blob], fileName, { type: 'application/pdf' });
+      const fileName = `Invoice_${receipt.invoice_number}.pdf`;
+      let pdfFile: File | null = null;
+      try {
+        const saleIdentifier = (receipt as any).id || (receipt as any).sale_id || receipt.invoice_number;
+        const blob = await api.getSupplementInvoicePdf(saleIdentifier);
+        pdfFile = new File([blob], fileName, { type: 'application/pdf' });
+      } catch (e) {
+        console.warn('Invoice PDF fetch error:', e);
+      }
 
-          // 1. Mobile & Web Share API support (Android, iOS)
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            try {
-              await navigator.share({
-                files: [file],
-                title: `Supplement Invoice - ${receipt.invoice_number}`,
-                text: message,
-              });
-              return;
-            } catch (shareErr: any) {
-              if (shareErr.name === 'AbortError') return;
-              console.warn('Native share failed, proceeding with desktop fallback:', shareErr);
-            }
-          } else {
-            // 2. Desktop Fallback:
-            const url = window.URL.createObjectURL(file);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = file.name;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-          }
+      // 1. Mobile & Web Share API support (Android, iOS)
+      if (pdfFile && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        try {
+          await navigator.share({
+            files: [pdfFile],
+            title: `Supplement Invoice - ${receipt.invoice_number}`,
+            text: message,
+          });
+          return;
+        } catch (shareErr: any) {
+          if (shareErr.name === 'AbortError') return;
+          console.warn('Native share failed, proceeding with desktop fallback:', shareErr);
+        }
+      }
+
+      // 2. Desktop Fallback:
+      if (pdfFile) {
+        try {
+          const url = window.URL.createObjectURL(pdfFile);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = pdfFile.name;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+          setNoticeMessage(`Invoice PDF "${fileName}" downloaded! In WhatsApp Web, simply drag & drop the PDF into the chat or attach as Document.`);
         } catch (e) {
-          console.warn('Invoice PDF fetch error:', e);
+          console.warn('Auto-download error:', e);
         }
       }
 
@@ -563,6 +576,22 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
             </div>
           </div>
         </div>
+
+        {/* Notice Message Banner */}
+        {noticeMessage && (
+          <div className="mx-6 mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex items-start gap-2 shadow-sm animate-fade-in">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-semibold">{noticeMessage}</p>
+            </div>
+            <button
+              onClick={() => setNoticeMessage(null)}
+              className="text-emerald-600 hover:text-emerald-800 font-bold ml-2 text-xs"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3 flex-wrap">

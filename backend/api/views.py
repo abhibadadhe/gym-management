@@ -822,9 +822,15 @@ class PaymentViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='pdf')
     def get_receipt_pdf(self, request, pk=None):
-        from django.http import HttpResponse
+        from django.http import HttpResponse, Http404
         from .pdf_generator import generate_payment_receipt_pdf
-        payment = self.get_object()
+        try:
+            if str(pk).isdigit():
+                payment = self.get_object()
+            else:
+                payment = Payment.objects.select_related('member', 'membership', 'membership__plan').get(receipt_number__iexact=pk)
+        except (Payment.DoesNotExist, Http404):
+            raise Http404("Payment receipt not found")
         pdf_bytes = generate_payment_receipt_pdf(payment)
         filename = f"Receipt_{payment.receipt_number}.pdf"
         response = HttpResponse(pdf_bytes, content_type='application/pdf')
@@ -1439,9 +1445,15 @@ class SupplementSaleViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['get'], url_path='pdf')
     def get_invoice_pdf(self, request, pk=None):
-        from django.http import HttpResponse
+        from django.http import HttpResponse, Http404
         from .pdf_generator import generate_supplement_invoice_pdf
-        sale = self.get_object()
+        try:
+            if str(pk).isdigit():
+                sale = self.get_object()
+            else:
+                sale = SupplementSale.objects.select_related('member', 'sold_by').prefetch_related('items', 'items__product').get(invoice_number__iexact=pk)
+        except (SupplementSale.DoesNotExist, Http404):
+            raise Http404("Supplement invoice not found")
         pdf_bytes = generate_supplement_invoice_pdf(sale)
         filename = f"Invoice_{sale.invoice_number}.pdf"
         response = HttpResponse(pdf_bytes, content_type='application/pdf')

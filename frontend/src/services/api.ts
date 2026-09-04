@@ -160,8 +160,12 @@ export const api = {
     const res = await apiClient.get(`/payments/${id}/receipt/`);
     return res.data;
   },
-  getReceiptPdf: async (id: number | string): Promise<Blob> => {
-    const res = await apiClient.get(`/payments/${id}/pdf/`, { responseType: 'blob' });
+  getReceiptPdf: async (idOrNumber: number | string): Promise<Blob> => {
+    if (typeof idOrNumber === 'number' || /^\d+$/.test(String(idOrNumber).trim())) {
+      const res = await apiClient.get(`/payments/${idOrNumber}/pdf/`, { responseType: 'blob' });
+      return res.data;
+    }
+    const res = await apiClient.get(`/public/receipts/${encodeURIComponent(String(idOrNumber))}/pdf/`, { responseType: 'blob' });
     return res.data;
   },
 
@@ -304,8 +308,12 @@ export const api = {
     const res = await apiClient.get(`/supplements/sales/${id}/receipt/`);
     return res.data;
   },
-  getSupplementInvoicePdf: async (id: number): Promise<Blob> => {
-    const res = await apiClient.get(`/supplements/sales/${id}/pdf/`, { responseType: 'blob' });
+  getSupplementInvoicePdf: async (idOrNumber: number | string): Promise<Blob> => {
+    if (typeof idOrNumber === 'number' || /^\d+$/.test(String(idOrNumber).trim())) {
+      const res = await apiClient.get(`/supplements/sales/${idOrNumber}/pdf/`, { responseType: 'blob' });
+      return res.data;
+    }
+    const res = await apiClient.get(`/public/invoices/${encodeURIComponent(String(idOrNumber))}/pdf/`, { responseType: 'blob' });
     return res.data;
   },
   getSupplementSummary: async (): Promise<SupplementSummary> => {

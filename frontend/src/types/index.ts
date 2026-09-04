@@ -251,6 +251,7 @@ export interface DashboardData {
 }
 
 export interface ReceiptData {
+  id?: number;
   gym: {
     name: string;
     tagline: string;

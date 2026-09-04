@@ -44,7 +44,9 @@ urlpatterns = [
 
     # Public Receipt & Invoice PDF endpoints (accessible by members via WhatsApp)
     path('public/receipts/<str:receipt_number>/pdf/', PublicReceiptPdfView.as_view(), name='public_receipt_pdf'),
+    path('public/receipts/<str:receipt_number>/pdf', PublicReceiptPdfView.as_view(), name='public_receipt_pdf_noslash'),
     path('public/invoices/<str:invoice_number>/pdf/', PublicInvoicePdfView.as_view(), name='public_invoice_pdf'),
+    path('public/invoices/<str:invoice_number>/pdf', PublicInvoicePdfView.as_view(), name='public_invoice_pdf_noslash'),
 
     # Router endpoints
     path('', include(router.urls)),

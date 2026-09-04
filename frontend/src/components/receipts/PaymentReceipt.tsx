@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Printer, MapPin, Phone, CheckCircle2, AlertCircle,
-  MessageSquare, RefreshCw
+  MessageSquare, RefreshCw, FileText
 } from 'lucide-react';
 import { ReceiptData } from '../../types';
 import { api } from '../../services/api';
@@ -23,7 +23,7 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
   const gymName = receipt.gym?.name || 'Morya Fitness';
   const gymTagline = receipt.gym?.tagline || 'Premium Gym & Fitness Center';
   const gymAddress = receipt.gym?.address || 'Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103';
-  const gymPhone = receipt.gym?.phone || '+91 98220 12345';
+  const gymPhone = receipt.gym?.phone || '+91 7219188002';
   const gymUpi = receipt.gym?.upi_id || 'moryafitness@okhdfcbank';
 
   // Safe Payment & Plan Properties
@@ -91,9 +91,16 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
   );
 
   const [isSending, setIsSending] = useState(false);
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+
+  const baseUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ? 'https://moryafitness.vercel.app'
+    : window.location.origin;
+  const publicPdfUrl = `${baseUrl}/api/public/receipts/${encodeURIComponent(receiptNo)}/pdf/`;
 
   const handleSendWhatsApp = async () => {
     setIsSending(true);
+    setNoticeMessage(null);
     try {
       const rawPhone = memberPhone || receipt.member?.phone || '';
       const cleanPhone = String(rawPhone).replace(/\D/g, '');
@@ -102,9 +109,6 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
         : cleanPhone.length === 10
           ? `91${cleanPhone}`
           : cleanPhone;
-
-      const origin = window.location.origin;
-      const pdfUrl = `${origin}/api/public/receipts/${encodeURIComponent(receiptNo)}/pdf/`;
 
       const message = `🏋️‍♂️ *${gymName.toUpperCase()} — OFFICIAL FEE RECEIPT*\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━\n` +
@@ -120,49 +124,57 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
           ? `⚠️ *Balance Dues Remaining:* ₹${remainingDues.toLocaleString('en-IN')}\n`
           : `✅ *Payment Status:* Settled in Full\n`) +
         `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `📥 *OFFICIAL RECEIPT (PDF):*\n` +
+        `${publicPdfUrl}\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `📍 *Address:* ${gymAddress}\n` +
         `📞 *Helpdesk:* ${gymPhone}\n\n` +
         `_Welcome to ${gymName}! Stay consistent & achieve your fitness goals!_ 🏆`;
 
-      const paymentId = receipt.id || receipt.payment?.id;
-      if (paymentId) {
-        try {
-          const blob = await api.getReceiptPdf(paymentId);
-          const fileName = `Receipt_${receiptNo}.pdf`;
-          const file = new File([blob], fileName, { type: 'application/pdf' });
+      const fileName = `Receipt_${receiptNo}.pdf`;
+      let pdfFile: File | null = null;
+      try {
+        const blob = await api.getReceiptPdf(receipt.id || receiptNo);
+        pdfFile = new File([blob], fileName, { type: 'application/pdf' });
+      } catch (pdfErr) {
+        console.warn('Could not fetch PDF blob ahead of sharing:', pdfErr);
+      }
 
-          // 1. Mobile & Web Share API support (Android, iOS)
-          // Directly attaches the PDF document file into WhatsApp!
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            try {
-              await navigator.share({
-                files: [file],
-                title: `Fee Receipt - ${receiptNo}`,
-                text: message,
-              });
-              return;
-            } catch (shareErr: any) {
-              if (shareErr.name === 'AbortError') return;
-              console.warn('Native share failed, proceeding with desktop fallback:', shareErr);
-            }
-          } else {
-            // 2. Desktop Fallback:
-            // Auto-downloads the PDF file so user has the file right in Downloads
-            const url = window.URL.createObjectURL(file);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = file.name;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-          }
-        } catch (e) {
-          console.warn('PDF fetch error:', e);
+      // 1. Mobile & Web Share API support (Android, iOS)
+      // Directly attaches the PDF document file into WhatsApp!
+      if (pdfFile && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        try {
+          await navigator.share({
+            files: [pdfFile],
+            title: `Fee Receipt - ${receiptNo}`,
+            text: message,
+          });
+          return;
+        } catch (shareErr: any) {
+          if (shareErr.name === 'AbortError') return;
+          console.warn('Native share cancelled or failed, using desktop fallback:', shareErr);
         }
       }
 
-      // Open WhatsApp chat directly with prefilled message containing direct PDF link
+      // 2. Desktop Fallback:
+      // Auto-downloads the PDF file so user has the file right in Downloads
+      if (pdfFile) {
+        try {
+          const url = window.URL.createObjectURL(pdfFile);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = pdfFile.name;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => window.URL.revokeObjectURL(url), 10000);
+          setNoticeMessage(`Receipt PDF "${fileName}" downloaded! In WhatsApp Web, simply drag & drop the PDF into the chat or attach as Document.`);
+        } catch (e) {
+          console.warn('PDF auto-download error:', e);
+        }
+      }
+
+      // 3. Open WhatsApp chat directly with prefilled message containing direct PDF link
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       const encodedText = encodeURIComponent(message);
       const whatsappUrl = isMobile
@@ -721,6 +733,22 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
           </div>
         </div>
       </div>
+
+      {/* Notice Message Banner */}
+      {noticeMessage && (
+        <div className="max-w-2xl mx-auto p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex items-start gap-2 shadow-sm animate-fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-semibold">{noticeMessage}</p>
+          </div>
+          <button
+            onClick={() => setNoticeMessage(null)}
+            className="text-emerald-600 hover:text-emerald-800 font-bold ml-2 text-xs"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Action Buttons */}
       <div className="flex items-center justify-end gap-3 max-w-2xl mx-auto flex-wrap">
