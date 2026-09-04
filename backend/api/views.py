@@ -123,9 +123,9 @@ class ForgotPasswordView(APIView):
             (Q(phone__endswith=clean_phone[-10:]) if len(clean_phone) >= 10 else Q(pk__in=[]))
         ).first()
 
-        # 2. If entered identifier is an email matching configured_email or gym_email, map to Owner/Admin
+        # 2. If entered identifier is an email matching configured_email, gym_email, or gokulgugale99@gmail.com, map to Owner/Admin
         if not user and '@' in identifier:
-            if (configured_email and identifier.lower() == configured_email.lower()) or (gym_email and identifier.lower() == gym_email.lower()):
+            if (configured_email and identifier.lower() == configured_email.lower()) or (gym_email and identifier.lower() == gym_email.lower()) or (identifier.lower() == 'gokulgugale99@gmail.com'):
                 user = User.objects.filter(Q(is_superuser=True) | Q(role=UserRole.OWNER) | Q(username='admin')).first()
                 if user:
                     user.email = identifier.strip().lower()
