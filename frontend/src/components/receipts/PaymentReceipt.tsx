@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import {
-  Printer, MapPin, Phone, CheckCircle2, AlertCircle,
-  MessageSquare, RefreshCw, FileText
+  Printer, MapPin, CheckCircle2,
+  MessageSquare, RefreshCw
 } from 'lucide-react';
-import { ReceiptData } from '../../types';
 import { api } from '../../services/api';
+import { generatePdfFromElement } from '../../utils/receiptPdfGenerator';
 
 interface PaymentReceiptProps {
   receipt: any;
@@ -12,6 +12,9 @@ interface PaymentReceiptProps {
 }
 
 export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose }) => {
+  const [isSending, setIsSending] = useState(false);
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+
   if (!receipt) return null;
 
   // Safe Member Properties
@@ -90,9 +93,6 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
     Math.max(0, finalPayable - amountPaid)
   );
 
-  const [isSending, setIsSending] = useState(false);
-  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
-
   const handleSendWhatsApp = async () => {
     setIsSending(true);
     setNoticeMessage(null);
@@ -125,11 +125,22 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
 
       const fileName = `Receipt_${receiptNo}.pdf`;
       let pdfFile: File | null = null;
+
+      // 1. Generate exact 1:1 pixel-perfect PDF directly from the on-screen receipt card DOM
       try {
-        const blob = await api.getReceiptPdf(receipt.id || receiptNo);
-        pdfFile = new File([blob], fileName, { type: 'application/pdf' });
-      } catch (pdfErr) {
-        console.warn('Could not fetch PDF blob ahead of sharing:', pdfErr);
+        pdfFile = await generatePdfFromElement('printable-receipt', fileName);
+      } catch (domErr) {
+        console.warn('DOM PDF generation failed, falling back to backend:', domErr);
+      }
+
+      // 2. Fallback to backend API if DOM generation was unavailable
+      if (!pdfFile) {
+        try {
+          const blob = await api.getReceiptPdf(receipt.id || receiptNo);
+          pdfFile = new File([blob], fileName, { type: 'application/pdf' });
+        } catch (pdfErr) {
+          console.warn('Could not fetch PDF blob ahead of sharing:', pdfErr);
+        }
       }
 
       // 1. Mobile & Web Share API support (Android, iOS)

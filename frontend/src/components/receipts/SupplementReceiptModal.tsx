@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import {
   Printer, X, CheckCircle2, ShoppingBag, MapPin,
-  Phone, CreditCard, Sparkles, Building2, MessageSquare,
-  RefreshCw
+  MessageSquare, RefreshCw
 } from 'lucide-react';
 import { SupplementReceiptData } from '../../types';
 import { api } from '../../services/api';
 import { useToast } from '../../context/ToastContext';
+import { generatePdfFromElement } from '../../utils/receiptPdfGenerator';
 
 interface SupplementReceiptModalProps {
   receipt: SupplementReceiptData;
@@ -65,12 +65,23 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
 
       const fileName = `Invoice_${receipt.invoice_number}.pdf`;
       let pdfFile: File | null = null;
+
+      // 1. Generate exact 1:1 pixel-perfect PDF directly from the on-screen invoice card DOM
       try {
-        const saleIdentifier = (receipt as any).id || (receipt as any).sale_id || receipt.invoice_number;
-        const blob = await api.getSupplementInvoicePdf(saleIdentifier);
-        pdfFile = new File([blob], fileName, { type: 'application/pdf' });
-      } catch (e) {
-        console.warn('Invoice PDF fetch error:', e);
+        pdfFile = await generatePdfFromElement('printable-supplement-invoice', fileName);
+      } catch (domErr) {
+        console.warn('DOM PDF generation failed, falling back to backend:', domErr);
+      }
+
+      // 2. Fallback to backend API if DOM generation was unavailable
+      if (!pdfFile) {
+        try {
+          const saleIdentifier = (receipt as any).id || (receipt as any).sale_id || receipt.invoice_number;
+          const blob = await api.getSupplementInvoicePdf(saleIdentifier);
+          pdfFile = new File([blob], fileName, { type: 'application/pdf' });
+        } catch (e) {
+          console.warn('Invoice PDF fetch error:', e);
+        }
       }
 
       // 1. Mobile & Web Share API support (Android, iOS)
@@ -462,10 +473,14 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
           </button>
         </div>
 
-        {/* Receipt Content */}
-        <div id="printable-supplement-invoice" className="p-6 space-y-5 text-xs text-slate-700 max-h-[75vh] overflow-y-auto">
-          {/* Gym Branding */}
-          <div className="flex items-center justify-between gap-4 pb-4 border-b border-slate-100">
+        {/* Receipt Scroll Area */}
+        <div className="p-4 sm:p-6 max-h-[75vh] overflow-y-auto bg-slate-50/50">
+          <div
+            id="printable-supplement-invoice"
+            className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm text-slate-800 space-y-5 text-xs max-w-xl mx-auto"
+          >
+            {/* Gym Branding */}
+            <div className="flex items-center justify-between gap-4 pb-4 border-b border-slate-100">
             <div className="flex items-center gap-3">
               <img
                 src="/logo.png"
@@ -477,7 +492,10 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                   {gymName}
                 </h2>
                 <p className="text-[11px] text-orange-600 font-semibold">{gymTagline}</p>
-                <p className="text-[10px] text-slate-500">{gymAddress}</p>
+                <p className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                  <MapPin className="w-3 h-3 text-slate-400" />
+                  {gymAddress}
+                </p>
               </div>
             </div>
 
@@ -567,7 +585,32 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
               </div>
             </div>
           </div>
+
+          {/* Store Terms & Official Seal */}
+          <div className="pt-5 border-t border-slate-200 grid grid-cols-2 items-end gap-4 text-[10px] text-slate-500">
+            <div className="space-y-1">
+              <p className="font-bold text-slate-700">Store Terms & Policies:</p>
+              <p>1. All supplement products are 100% genuine & authentic.</p>
+              <p>2. Opened or unsealed products are non-returnable.</p>
+              <p>3. Official store tax invoice issued by {gymName}, Sinnar.</p>
+            </div>
+
+            <div className="text-right space-y-2 flex flex-col items-end">
+              <div className="inline-flex flex-col items-center -rotate-6 transition-transform hover:rotate-0">
+                <div className="w-14 h-14 rounded-full border-2 border-blue-900 p-0.5 bg-white shadow-sm ring-2 ring-blue-100 flex items-center justify-center overflow-hidden">
+                  <img src="/logo.png" alt="Seal" className="w-full h-full object-cover rounded-full" />
+                </div>
+                <span className="text-[8px] font-black tracking-wider text-blue-900 uppercase mt-1 px-2 py-0.5 bg-blue-50 border border-blue-300 rounded">
+                  OFFICIAL STORE SEAL • SINNAR
+                </span>
+              </div>
+              <div className="w-28 border-b border-slate-300" />
+              <p className="font-bold text-slate-800 text-xs">Authorized Signatory</p>
+              <p className="text-[9px] text-slate-500">{gymName}, Sinnar</p>
+            </div>
+          </div>
         </div>
+      </div>
 
         {/* Notice Message Banner */}
         {noticeMessage && (
