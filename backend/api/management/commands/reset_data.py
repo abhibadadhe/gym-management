@@ -13,13 +13,18 @@ from api.models import (
     Expense,
     AuditLog,
     UserRole,
+    SupplementCategory,
+    SupplementProduct,
+    SupplementSale,
+    SupplementSaleItem,
+    PasswordResetOTP,
 )
 
 User = get_user_model()
 
 
 class Command(BaseCommand):
-    help = "Resets all gym operational data (members, payments, attendance, expenses, logs) while preserving Admin login and plans."
+    help = "Resets all gym operational data (members, payments, attendance, expenses, supplement sales, logs) while preserving Admin login and plans."
 
     def handle(self, *args, **options):
         self.stdout.write("Clearing all transactional and member data...")
@@ -34,6 +39,9 @@ class Command(BaseCommand):
         Expense.objects.all().delete()
         Trainer.objects.all().delete()
         AuditLog.objects.all().delete()
+        SupplementSaleItem.objects.all().delete()
+        SupplementSale.objects.all().delete()
+        PasswordResetOTP.objects.all().delete()
 
         # 2. Clear non-admin users
         User.objects.exclude(username="admin").delete()
@@ -46,19 +54,20 @@ class Command(BaseCommand):
             username="admin",
             defaults={
                 "email": admin_email,
-                "first_name": "Harsh",
-                "last_name": "Patil (Owner)",
+                "first_name": "Gokul",
+                "last_name": "Gugale (Owner)",
                 "role": UserRole.OWNER,
                 "is_staff": True,
                 "is_superuser": True,
             },
         )
         admin_user.set_password("admin123")
+        admin_user.first_name = "Gokul"
+        admin_user.last_name = "Gugale (Owner)"
         admin_user.role = UserRole.OWNER
         admin_user.is_staff = True
         admin_user.is_superuser = True
-        if not admin_user.email or "gokul" in admin_user.email:
-            admin_user.email = admin_email
+        admin_user.email = admin_email
         admin_user.save()
 
         # 4. Ensure Gym Settings are ready
@@ -66,14 +75,13 @@ class Command(BaseCommand):
         gym_settings.name = "Morya Fitness"
         gym_settings.tagline = "Premium Gym & Fitness Center"
         gym_settings.address = "Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103"
-        gym_settings.phone = "+91 98220 12345"
+        gym_settings.phone = "+91 7219188002"
         gym_settings.email = getattr(settings, 'EMAIL_HOST_USER', None) or "contact@moryafitness.com"
-        gym_settings.upi_id = "moryafitness@okhdfcbank"
+        gym_settings.upi_id = "7219188002@ybl"
         gym_settings.receipt_prefix = "MF-REC-"
         gym_settings.save()
 
         # 5. Ensure Default Supplement Categories are created
-        from api.models import SupplementCategory, SupplementProduct
         categories = [
             ("Whey Protein", "Whey isolate, concentrate, and blend protein powders"),
             ("Creatine", "Micronized & monohydrate creatine formulas"),
@@ -89,9 +97,11 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                "Successfully reset all data!\n"
-                "- Members, subscriptions, payments, attendance, expenses, and logs have been wiped clean.\n"
-                "- Admin credentials preserved: username='admin', password='admin123'\n"
-                "- Gym Settings & Membership Plans are ready for new registrations."
+                "Successfully reset all gym operational data!\n"
+                "- All members, subscriptions, fee payments, attendance, expenses, supplement sales, and logs wiped.\n"
+                "- Admin login preserved: username='admin', password='admin123'\n"
+                "- Owner: Gokul Gugale\n"
+                "- Gym Settings & Contact Info: Sinnar 422103 | +91 7219188002 | UPI: 7219188002@ybl\n"
+                "- Membership Plans and Supplement categories preserved and ready for fresh entries."
             )
         )
