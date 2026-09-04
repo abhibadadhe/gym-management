@@ -93,11 +93,6 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
   const [isSending, setIsSending] = useState(false);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
 
-  const baseUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-    ? 'https://moryafitness.vercel.app'
-    : window.location.origin;
-  const publicPdfUrl = `${baseUrl}/api/public/receipts/${encodeURIComponent(receiptNo)}/pdf/`;
-
   const handleSendWhatsApp = async () => {
     setIsSending(true);
     setNoticeMessage(null);
@@ -123,9 +118,6 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
         (remainingDues > 0
           ? `⚠️ *Balance Dues Remaining:* ₹${remainingDues.toLocaleString('en-IN')}\n`
           : `✅ *Payment Status:* Settled in Full\n`) +
-        `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `📥 *OFFICIAL RECEIPT (PDF):*\n` +
-        `${publicPdfUrl}\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `📍 *Address:* ${gymAddress}\n` +
         `📞 *Helpdesk:* ${gymPhone}\n\n` +

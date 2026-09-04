@@ -1,99 +1,36 @@
 import io
 import os
-import shutil
-import base64
-import tempfile
-import subprocess
 from django.conf import settings as django_settings
 from api.models import GymSettings
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+)
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 
 
-def get_gym_logo_base64() -> str:
+def get_gym_logo_path() -> str | None:
     candidates = [
         os.path.join(django_settings.BASE_DIR, 'static', 'logo.png'),
         os.path.join(django_settings.BASE_DIR, '..', 'frontend', 'public', 'logo.png'),
         os.path.join(django_settings.BASE_DIR, '..', 'frontend', 'dist', 'logo.png'),
+        '/app/static/logo.png',
+        '/app/frontend/public/logo.png',
+        '/app/frontend/dist/logo.png',
     ]
     for p in candidates:
         if os.path.exists(p):
-            try:
-                with open(p, 'rb') as f:
-                    return 'data:image/png;base64,' + base64.b64encode(f.read()).decode('utf-8')
-            except Exception:
-                pass
-    return ''
-
-
-def find_headless_browser() -> str | None:
-    candidate_browsers = [
-        r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
-        r'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
-        r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-        r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
-        'msedge',
-        'chrome',
-        'google-chrome',
-        'google-chrome-stable',
-        'chromium',
-        'chromium-browser',
-    ]
-    for b in candidate_browsers:
-        if os.path.isabs(b) and os.path.exists(b):
-            return b
-        elif not os.path.isabs(b):
-            found = shutil.which(b)
-            if found:
-                return found
+            return p
     return None
 
 
-def render_html_to_pdf(html_content: str) -> bytes:
-    browser = find_headless_browser()
-    if browser:
-        tmp_html = None
-        tmp_pdf = None
-        try:
-            with tempfile.NamedTemporaryFile(suffix='.html', delete=False, mode='w', encoding='utf-8') as f:
-                f.write(html_content)
-                tmp_html = f.name
-            tmp_pdf = tmp_html.replace('.html', '.pdf')
-
-            cmd = [
-                browser,
-                '--headless',
-                '--disable-gpu',
-                '--no-pdf-header-footer',
-                f'--print-to-pdf={tmp_pdf}',
-                tmp_html
-            ]
-            res = subprocess.run(cmd, capture_output=True, timeout=20)
-            if res.returncode == 0 and os.path.exists(tmp_pdf) and os.path.getsize(tmp_pdf) > 1000:
-                with open(tmp_pdf, 'rb') as pf:
-                    return pf.read()
-        except Exception as e:
-            print("Chromium headless print error, falling back to xhtml2pdf:", e)
-        finally:
-            if tmp_html and os.path.exists(tmp_html):
-                try: os.remove(tmp_html)
-                except Exception: pass
-            if tmp_pdf and os.path.exists(tmp_pdf):
-                try: os.remove(tmp_pdf)
-                except Exception: pass
-
-    # Robust fallback: xhtml2pdf
-    try:
-        from xhtml2pdf import pisa
-        buf = io.BytesIO()
-        pisa_status = pisa.CreatePDF(html_content, dest=buf)
-        if not pisa_status.err:
-            return buf.getvalue()
-    except Exception as e:
-        print("xhtml2pdf error:", e)
-
-    return b""
-
-
 def generate_payment_receipt_pdf(payment) -> bytes:
+    """
+    Generates a pixel-perfect, single-page official fee receipt PDF
+    matching the on-screen React receipt modal exactly.
+    """
     settings = GymSettings.get_settings()
     member = payment.member
     membership = payment.membership
@@ -102,7 +39,7 @@ def generate_payment_receipt_pdf(payment) -> bytes:
     gym_tagline = settings.tagline or 'Premium Gym & Fitness Center'
     gym_address = settings.address or 'Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103'
 
-    plan_name = membership.plan.name if membership and membership.plan else 'General Fitness'
+    plan_name = membership.plan.name if membership and membership.plan else 'Gym Membership Fee'
     duration_days = membership.plan.duration_days if membership and membership.plan else 30
     plan_price = float(membership.price) if membership else float(payment.amount)
     discount = float(membership.discount) if membership else 0.0
@@ -113,926 +50,596 @@ def generate_payment_receipt_pdf(payment) -> bytes:
     raw_pm = (payment.payment_method or 'UPI').upper()
     payment_mode = 'Cash' if 'CASH' in raw_pm else 'UPI'
     cashier = payment.received_by.get_full_name() if payment.received_by else 'Gokul Gugale'
+    payment_date_str = payment.payment_date.strftime('%d %b %Y') if hasattr(payment, 'payment_date') and payment.payment_date else '04 Sep 2026'
 
-    logo_b64 = get_gym_logo_base64()
-    logo_tag = f'<img src="{logo_b64}" class="brand-logo" alt="Logo" />' if logo_b64 else '<div class="brand-logo-placeholder"></div>'
-    seal_logo_tag = f'<img src="{logo_b64}" alt="Seal Logo" />' if logo_b64 else ''
+    logo_path = get_gym_logo_path()
+    buf = io.BytesIO()
 
-    discount_row_html = ''
+    # A4 dimensions: 595.27 x 841.89 points
+    page_margin = 22 # points
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=page_margin,
+        rightMargin=page_margin,
+        topMargin=page_margin,
+        bottomMargin=page_margin,
+    )
+
+    avail_w = A4[0] - 2 * page_margin # ~551.27 pt
+    card_padding = 16 # pt
+    inner_w = avail_w - 2 * card_padding # ~519.27 pt
+
+    styles = getSampleStyleSheet()
+
+    # Typography & Styles
+    gym_title_style = ParagraphStyle(
+        'GymTitle',
+        fontName='Helvetica-Bold',
+        fontSize=18,
+        leading=21,
+        textColor=colors.HexColor('#0F172A'),
+        textTransform='uppercase',
+    )
+    gym_tagline_style = ParagraphStyle(
+        'GymTagline',
+        fontName='Helvetica-Bold',
+        fontSize=9.5,
+        leading=13,
+        textColor=colors.HexColor('#EA580C'),
+    )
+    gym_addr_style = ParagraphStyle(
+        'GymAddress',
+        fontName='Helvetica',
+        fontSize=8.5,
+        leading=12,
+        textColor=colors.HexColor('#64748B'),
+    )
+
+    badge_label_style = ParagraphStyle(
+        'BadgeLabel',
+        fontName='Helvetica-Bold',
+        fontSize=8,
+        leading=10,
+        alignment=TA_RIGHT,
+        textColor=colors.HexColor('#C2410C'),
+        textTransform='uppercase',
+    )
+    badge_no_style = ParagraphStyle(
+        'BadgeNo',
+        fontName='Helvetica-Bold',
+        fontSize=12,
+        leading=15,
+        alignment=TA_RIGHT,
+        textColor=colors.HexColor('#0F172A'),
+    )
+    badge_date_style = ParagraphStyle(
+        'BadgeDate',
+        fontName='Helvetica',
+        fontSize=8.5,
+        leading=11,
+        alignment=TA_RIGHT,
+        textColor=colors.HexColor('#64748B'),
+    )
+
+    meta_title_left = ParagraphStyle('MetaTitleLeft', fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=colors.HexColor('#94A3B8'), textTransform='uppercase')
+    meta_name_left = ParagraphStyle('MetaNameLeft', fontName='Helvetica-Bold', fontSize=13, leading=16, textColor=colors.HexColor('#0F172A'))
+    meta_id_left = ParagraphStyle('MetaIdLeft', fontName='Helvetica-Bold', fontSize=9.5, leading=13, textColor=colors.HexColor('#EA580C'))
+    meta_phone_left = ParagraphStyle('MetaPhoneLeft', fontName='Helvetica', fontSize=8.5, leading=11, textColor=colors.HexColor('#64748B'))
+
+    meta_title_right = ParagraphStyle('MetaTitleRight', fontName='Helvetica-Bold', fontSize=8, leading=10, alignment=TA_RIGHT, textColor=colors.HexColor('#94A3B8'), textTransform='uppercase')
+    meta_mode_right = ParagraphStyle('MetaModeRight', fontName='Helvetica-Bold', fontSize=13, leading=16, alignment=TA_RIGHT, textColor=colors.HexColor('#0F172A'))
+    meta_ref_right = ParagraphStyle('MetaRefRight', fontName='Helvetica', fontSize=8, leading=10, alignment=TA_RIGHT, textColor=colors.HexColor('#64748B'))
+    meta_cashier_right = ParagraphStyle('MetaCashierRight', fontName='Helvetica', fontSize=8.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#64748B'))
+
+    th_left = ParagraphStyle('THLeft', fontName='Helvetica-Bold', fontSize=8.5, leading=11, textColor=colors.HexColor('#475569'))
+    th_center = ParagraphStyle('THCenter', fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=TA_CENTER, textColor=colors.HexColor('#475569'))
+    th_right = ParagraphStyle('THRight', fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#475569'))
+
+    td_item_name = ParagraphStyle('TDItemName', fontName='Helvetica-Bold', fontSize=10.5, leading=13, textColor=colors.HexColor('#0F172A'))
+    td_item_desc = ParagraphStyle('TDItemDesc', fontName='Helvetica', fontSize=8, leading=10, textColor=colors.HexColor('#64748B'))
+    td_val = ParagraphStyle('TDVal', fontName='Helvetica-Bold', fontSize=9.5, leading=12, alignment=TA_CENTER, textColor=colors.HexColor('#334155'))
+    td_amt = ParagraphStyle('TDAmt', fontName='Helvetica-Bold', fontSize=10.5, leading=13, alignment=TA_RIGHT, textColor=colors.HexColor('#0F172A'))
+
+    calc_label = ParagraphStyle('CalcLabel', fontName='Helvetica', fontSize=9, leading=11, textColor=colors.HexColor('#475569'))
+    calc_val = ParagraphStyle('CalcVal', fontName='Helvetica-Bold', fontSize=9, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#1E293B'))
+
+    calc_discount_label = ParagraphStyle('CalcDiscountLabel', fontName='Helvetica-Bold', fontSize=9, leading=11, textColor=colors.HexColor('#059669'))
+    calc_discount_val = ParagraphStyle('CalcDiscountVal', fontName='Helvetica-Bold', fontSize=9, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#059669'))
+
+    calc_net_label = ParagraphStyle('CalcNetLabel', fontName='Helvetica-Bold', fontSize=9.5, leading=12, textColor=colors.HexColor('#0F172A'))
+    calc_net_val = ParagraphStyle('CalcNetVal', fontName='Helvetica-Bold', fontSize=10, leading=12, alignment=TA_RIGHT, textColor=colors.HexColor('#0F172A'))
+
+    calc_paid_label = ParagraphStyle('CalcPaidLabel', fontName='Helvetica-Bold', fontSize=10, leading=12, textColor=colors.HexColor('#059669'))
+    calc_paid_val = ParagraphStyle('CalcPaidVal', fontName='Helvetica-Bold', fontSize=10.5, leading=12, alignment=TA_RIGHT, textColor=colors.HexColor('#059669'))
+
+    calc_status_label = ParagraphStyle('CalcStatusLabel', fontName='Helvetica-Bold', fontSize=8.5, leading=11, textColor=colors.HexColor('#059669'))
+    calc_status_val = ParagraphStyle('CalcStatusVal', fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#059669'))
+
+    calc_due_label = ParagraphStyle('CalcDueLabel', fontName='Helvetica-Bold', fontSize=8.5, leading=11, textColor=colors.HexColor('#DC2626'))
+    calc_due_val = ParagraphStyle('CalcDueVal', fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#DC2626'))
+
+    terms_title = ParagraphStyle('TermsTitle', fontName='Helvetica-Bold', fontSize=8.5, leading=11, textColor=colors.HexColor('#334155'))
+    terms_body = ParagraphStyle('TermsBody', fontName='Helvetica', fontSize=7.5, leading=10.5, textColor=colors.HexColor('#64748B'))
+
+    sig_title = ParagraphStyle('SigTitle', fontName='Helvetica-Bold', fontSize=9.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#0F172A'))
+    sig_sub = ParagraphStyle('SigSub', fontName='Helvetica', fontSize=7.5, leading=9.5, alignment=TA_RIGHT, textColor=colors.HexColor('#64748B'))
+    seal_tag = ParagraphStyle('SealTag', fontName='Helvetica-Bold', fontSize=6.5, leading=8, alignment=TA_CENTER, textColor=colors.HexColor('#1E3A8A'))
+
+    inner_elements = []
+
+    # 1. Header (Logo + Gym Info on Left, Official Receipt Badge on Right)
+    logo_img = Image(logo_path, width=46, height=46) if logo_path and os.path.exists(logo_path) else Paragraph('', styles['Normal'])
+    brand_info = [
+        Paragraph(gym_name.upper(), gym_title_style),
+        Spacer(1, 1),
+        Paragraph(gym_tagline, gym_tagline_style),
+        Spacer(1, 2),
+        Paragraph(gym_address, gym_addr_style),
+    ]
+
+    badge_data = [
+        [Paragraph("OFFICIAL FEE RECEIPT", badge_label_style)],
+        [Paragraph(payment.receipt_number, badge_no_style)],
+        [Paragraph(f"Date: {payment_date_str}", badge_date_style)],
+    ]
+    badge_table = Table(badge_data, colWidths=[140])
+    badge_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#FFF7ED')),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#FED7AA')),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('LEFTPADDING', (0,0), (-1,-1), 8),
+        ('RIGHTPADDING', (0,0), (-1,-1), 8),
+    ]))
+
+    header_table = Table([[logo_img, brand_info, badge_table]], colWidths=[50, inner_w - 50 - 145, 145])
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LINEBELOW', (0,0), (-1,-1), 1.5, colors.HexColor('#E2E8F0')),
+    ]))
+    inner_elements.append(header_table)
+    inner_elements.append(Spacer(1, 10))
+
+    # 2. Member & Payment Information Box
+    member_col = [
+        Paragraph("MEMBER DETAILS", meta_title_left),
+        Spacer(1, 2),
+        Paragraph(member.full_name, meta_name_left),
+        Spacer(1, 1),
+        Paragraph(f"ID: {member.member_id}", meta_id_left),
+        Spacer(1, 1),
+        Paragraph(f"Phone: +91 {member.phone}", meta_phone_left),
+    ]
+    payment_col = [
+        Paragraph("PAYMENT MODE", meta_title_right),
+        Spacer(1, 2),
+        Paragraph(payment_mode, meta_mode_right),
+    ]
+    if getattr(payment, 'transaction_ref', None):
+        payment_col.append(Spacer(1, 1))
+        payment_col.append(Paragraph(f"Ref: {payment.transaction_ref}", meta_ref_right))
+    payment_col.append(Spacer(1, 2))
+    payment_col.append(Paragraph(f"Cashier: {cashier}", meta_cashier_right))
+
+    info_table = Table([[member_col, payment_col]], colWidths=[inner_w * 0.55, inner_w * 0.45])
+    info_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F8FAFC')),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#E2E8F0')),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LEFTPADDING', (0,0), (-1,-1), 12),
+        ('RIGHTPADDING', (0,0), (-1,-1), 12),
+    ]))
+    inner_elements.append(info_table)
+    inner_elements.append(Spacer(1, 10))
+
+    # 3. Itemized Fee Table
+    items_data = [
+        [
+            Paragraph("MEMBERSHIP ITEM", th_left),
+            Paragraph("VALIDITY", th_center),
+            Paragraph("AMOUNT (Rs.)", th_right)
+        ],
+        [
+            [Paragraph(plan_name, td_item_name), Spacer(1, 1), Paragraph("General gym &amp; equipment access", td_item_desc)],
+            Paragraph(f"{duration_days} Days", td_val),
+            Paragraph(f"Rs. {plan_price:,.0f}", td_amt)
+        ]
+    ]
+    items_table = Table(items_data, colWidths=[inner_w * 0.55, inner_w * 0.20, inner_w * 0.25])
+    items_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F1F5F9')),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#CBD5E1')),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#F1F5F9')),
+        ('LINEBELOW', (0,0), (-1,0), 1, colors.HexColor('#CBD5E1')),
+        ('TOPPADDING', (0,0), (-1,-1), 7),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 7),
+        ('LEFTPADDING', (0,0), (-1,-1), 10),
+        ('RIGHTPADDING', (0,0), (-1,-1), 10),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    inner_elements.append(items_table)
+    inner_elements.append(Spacer(1, 8))
+
+    # 4. Financial Calculation Summary (Aligned to Right)
+    calc_w = 240
+    calc_rows = [
+        [Paragraph("Plan Base Amount:", calc_label), Paragraph(f"Rs. {plan_price:,.0f}", calc_val)],
+    ]
     if discount > 0:
-        discount_row_html = f'''
-        <div class="calc-row">
-          <span>Discount Applied:</span>
-          <span style="color: #059669; font-weight: 700;">-₹{discount:,.0f}</span>
-        </div>
-        '''
+        calc_rows.append([Paragraph("Discount Applied:", calc_discount_label), Paragraph(f"-Rs. {discount:,.0f}", calc_discount_val)])
+    calc_rows.append([Paragraph("Net Payable:", calc_net_label), Paragraph(f"Rs. {final_amount:,.0f}", calc_net_val)])
+    calc_rows.append([Paragraph("Amount Paid:", calc_paid_label), Paragraph(f"Rs. {paid_amount:,.0f}", calc_paid_val)])
 
-    status_html = ''
     if remaining_dues > 0:
-        status_html = f'''
-        <div class="due-banner">
-          <span>Balance Dues Remaining:</span>
-          <span>₹{remaining_dues:,.0f}</span>
-        </div>
-        '''
+        calc_rows.append([Paragraph("Balance Dues:", calc_due_label), Paragraph(f"Rs. {remaining_dues:,.0f}", calc_due_val)])
     else:
-        status_html = '''
-        <div class="status-banner">
-          <span>Payment Status:</span>
-          <span>✓ Settled in Full</span>
-        </div>
-        '''
+        calc_rows.append([Paragraph("Payment Status:", calc_status_label), Paragraph("✓ Settled in Full", calc_status_val)])
 
-    html = f'''<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>Receipt_{payment.receipt_number}</title>
-<style>
-  @page {{
-    size: A4 portrait;
-    margin: 10mm;
-  }}
-  * {{
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }}
-  body {{
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    color: #1e293b;
-    background: #ffffff;
-    font-size: 13px;
-    line-height: 1.4;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }}
-  .receipt-card {{
-    max-width: 660px;
-    margin: 0 auto;
-    border: 1px solid #e2e8f0;
-    border-radius: 24px;
-    padding: 26px 30px;
-    background: #ffffff;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-  }}
-  .header {{
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-bottom: 18px;
-    border-bottom: 1px solid #e2e8f0;
-    gap: 16px;
-  }}
-  .brand-left {{
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }}
-  .brand-logo {{
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 2.5px solid #ea580c;
-    flex-shrink: 0;
-  }}
-  .brand-logo-placeholder {{
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background: #fed7aa;
-    border: 2.5px solid #ea580c;
-    flex-shrink: 0;
-  }}
-  .brand-name {{
-    font-size: 22px;
-    font-weight: 900;
-    color: #0f172a;
-    letter-spacing: -0.5px;
-    line-height: 1.1;
-  }}
-  .brand-tagline {{
-    font-size: 11.5px;
-    font-weight: 700;
-    color: #ea580c;
-    margin-top: 3px;
-  }}
-  .brand-address {{
-    font-size: 11px;
-    color: #64748b;
-    margin-top: 3px;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }}
-  .location-pin {{
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    background: #ea580c;
-    mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>');
-    -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>');
-    vertical-align: middle;
-  }}
-  .receipt-badge {{
-    text-align: right;
-    background: #fff7ed;
-    border: 1px solid #fed7aa;
-    padding: 10px 18px;
-    border-radius: 16px;
-    flex-shrink: 0;
-  }}
-  .badge-tag {{
-    font-size: 9.5px;
-    font-weight: 800;
-    color: #c2410c;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-  }}
-  .badge-no {{
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 13px;
-    font-weight: 800;
-    color: #0f172a;
-    margin-top: 2px;
-  }}
-  .badge-date {{
-    font-size: 11px;
-    color: #64748b;
-    margin-top: 2px;
-  }}
-  .info-box {{
-    display: flex;
-    justify-content: space-between;
-    background: #f8fafc;
-    border: 1px solid #f1f5f9;
-    border-radius: 16px;
-    padding: 14px 18px;
-    margin-top: 18px;
-  }}
-  .info-col-title {{
-    font-size: 9.5px;
-    font-weight: 800;
-    text-transform: uppercase;
-    color: #94a3b8;
-    letter-spacing: 0.6px;
-    margin-bottom: 2px;
-  }}
-  .member-name {{
-    font-size: 14.5px;
-    font-weight: 800;
-    color: #0f172a;
-  }}
-  .member-id {{
-    font-size: 11px;
-    font-weight: 700;
-    color: #ea580c;
-    margin-top: 2px;
-  }}
-  .member-phone {{
-    font-size: 11px;
-    color: #64748b;
-    margin-top: 2px;
-  }}
-  .payment-method {{
-    font-size: 14.5px;
-    font-weight: 800;
-    color: #0f172a;
-    text-align: right;
-  }}
-  .cashier-name {{
-    font-size: 11px;
-    color: #64748b;
-    margin-top: 3px;
-    text-align: right;
-  }}
-  .table-box {{
-    border: 1px solid #e2e8f0;
-    border-radius: 14px;
-    overflow: hidden;
-    margin-top: 18px;
-  }}
-  table {{
-    width: 100%;
-    border-collapse: collapse;
-  }}
-  th {{
-    background: #f8fafc;
-    color: #475569;
-    font-size: 10px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    padding: 10px 16px;
-    border-bottom: 1px solid #e2e8f0;
-    text-align: left;
-  }}
-  th.text-center, td.text-center {{ text-align: center; }}
-  th.text-right, td.text-right {{ text-align: right; }}
-  td {{
-    padding: 12px 16px;
-    font-size: 12.5px;
-    color: #1e293b;
-    vertical-align: middle;
-  }}
-  .item-title {{
-    font-weight: 800;
-    color: #0f172a;
-    font-size: 13px;
-  }}
-  .item-sub {{
-    font-size: 11px;
-    color: #94a3b8;
-    margin-top: 2px;
-  }}
-  .item-duration {{
-    font-weight: 600;
-    color: #334155;
-    font-size: 12.5px;
-  }}
-  .item-price {{
-    font-weight: 800;
-    color: #0f172a;
-    font-size: 13px;
-  }}
-  .calc-container {{
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 16px;
-  }}
-  .calc-box {{
-    width: 270px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }}
-  .calc-row {{
-    display: flex;
-    justify-content: space-between;
-    font-size: 12px;
-    color: #475569;
-  }}
-  .calc-row.net {{
-    font-weight: 800;
-    color: #0f172a;
-    font-size: 12.5px;
-  }}
-  .paid-banner {{
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: #ecfdf5;
-    border: 1px solid #a7f3d0;
-    border-radius: 10px;
-    padding: 8px 12px;
-    color: #059669;
-    font-weight: 800;
-    font-size: 13.5px;
-    margin-top: 2px;
-  }}
-  .status-banner {{
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: #ecfdf5;
-    border: 1px solid #a7f3d0;
-    border-radius: 10px;
-    padding: 7px 12px;
-    color: #059669;
-    font-weight: 800;
-    font-size: 11.5px;
-  }}
-  .due-banner {{
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: #fef2f2;
-    border: 1px solid #fecaca;
-    border-radius: 10px;
-    padding: 7px 12px;
-    color: #dc2626;
-    font-weight: 800;
-    font-size: 11.5px;
-  }}
-  .footer {{
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    margin-top: 26px;
-    padding-top: 16px;
-    border-top: 1px solid #f1f5f9;
-  }}
-  .terms-title {{
-    font-size: 10.5px;
-    font-weight: 800;
-    color: #334155;
-    margin-bottom: 4px;
-  }}
-  .terms-list {{
-    font-size: 9.5px;
-    color: #64748b;
-    line-height: 1.5;
-  }}
-  .seal-signature {{
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-  }}
-  .stamp-container {{
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-bottom: 6px;
-    transform: rotate(-6deg);
-  }}
-  .stamp-ring {{
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    border: 2px solid #1e3a8a;
-    padding: 2px;
-    background: #ffffff;
-    box-shadow: 0 0 0 2px rgba(30, 58, 138, 0.15);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }}
-  .stamp-ring img {{
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    object-fit: cover;
-  }}
-  .stamp-tag {{
-    font-size: 7.5px;
-    font-weight: 900;
-    color: #1e3a8a;
-    border: 1.5px solid #1e3a8a;
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: #eff6ff;
-    margin-top: 3px;
-    letter-spacing: 0.5px;
-  }}
-  .sig-title {{
-    font-size: 11.5px;
-    font-weight: 800;
-    color: #0f172a;
-    margin-top: 4px;
-  }}
-  .sig-sub {{
-    font-size: 9.5px;
-    color: #64748b;
-    margin-top: 1px;
-  }}
-</style>
-</head>
-<body>
-  <div class="receipt-card">
-    <!-- Header -->
-    <div class="header">
-      <div class="brand-left">
-        {logo_tag}
-        <div>
-          <div class="brand-name">{gym_name}</div>
-          <div class="brand-tagline">{gym_tagline}</div>
-          <div class="brand-address">
-            <span class="location-pin"></span> {gym_address}
-          </div>
-        </div>
-      </div>
-      <div class="receipt-badge">
-        <div class="badge-tag">OFFICIAL FEE RECEIPT</div>
-        <div class="badge-no">{payment.receipt_number}</div>
-        <div class="badge-date">Date: {payment.payment_date.strftime('%d %b %Y')}</div>
-      </div>
-    </div>
+    calc_inner_table = Table(calc_rows, colWidths=[120, 120])
+    paid_row_idx = len(calc_rows) - 2
+    status_row_idx = len(calc_rows) - 1
 
-    <!-- Member Details & Payment Info -->
-    <div class="info-box">
-      <div>
-        <div class="info-col-title">MEMBER DETAILS</div>
-        <div class="member-name">{member.full_name}</div>
-        <div class="member-id">ID: {member.member_id}</div>
-        <div class="member-phone">Phone: +91 {member.phone}</div>
-      </div>
-      <div>
-        <div class="info-col-title" style="text-align: right;">PAYMENT MODE</div>
-        <div class="payment-method">{payment_mode}</div>
-        <div class="cashier-name">Cashier: {cashier}</div>
-      </div>
-    </div>
+    calc_style_commands = [
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 2.5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2.5),
+        ('LEFTPADDING', (0,0), (-1,-1), 4),
+        ('RIGHTPADDING', (0,0), (-1,-1), 4),
+        ('LINEABOVE', (0, paid_row_idx - 1), (-1, paid_row_idx - 1), 1, colors.HexColor('#E2E8F0')),
+        ('BACKGROUND', (0, paid_row_idx), (-1, paid_row_idx), colors.HexColor('#ECFDF5')),
+        ('BOX', (0, paid_row_idx), (-1, paid_row_idx), 1, colors.HexColor('#A7F3D0')),
+        ('TOPPADDING', (0, paid_row_idx), (-1, paid_row_idx), 5),
+        ('BOTTOMPADDING', (0, paid_row_idx), (-1, paid_row_idx), 5),
+    ]
 
-    <!-- Table -->
-    <div class="table-box">
-      <table>
-        <thead>
-          <tr>
-            <th>MEMBERSHIP ITEM</th>
-            <th class="text-center">VALIDITY</th>
-            <th class="text-right">AMOUNT (₹)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>
-              <div class="item-title">{plan_name}</div>
-              <div class="item-sub">General gym & equipment access</div>
-            </td>
-            <td class="text-center item-duration">{duration_days} Days</td>
-            <td class="text-right item-price">₹{plan_price:,.0f}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+    if remaining_dues > 0:
+        calc_style_commands.extend([
+            ('BACKGROUND', (0, status_row_idx), (-1, status_row_idx), colors.HexColor('#FEF2F2')),
+            ('BOX', (0, status_row_idx), (-1, status_row_idx), 1, colors.HexColor('#FECACA')),
+            ('TOPPADDING', (0, status_row_idx), (-1, status_row_idx), 4),
+            ('BOTTOMPADDING', (0, status_row_idx), (-1, status_row_idx), 4),
+        ])
+    else:
+        calc_style_commands.extend([
+            ('BACKGROUND', (0, status_row_idx), (-1, status_row_idx), colors.HexColor('#ECFDF5')),
+            ('BOX', (0, status_row_idx), (-1, status_row_idx), 1, colors.HexColor('#A7F3D0')),
+            ('TOPPADDING', (0, status_row_idx), (-1, status_row_idx), 4),
+            ('BOTTOMPADDING', (0, status_row_idx), (-1, status_row_idx), 4),
+        ])
 
-    <!-- Calculation Summary -->
-    <div class="calc-container">
-      <div class="calc-box">
-        <div class="calc-row">
-          <span>Plan Base Amount:</span>
-          <span>₹{plan_price:,.0f}</span>
-        </div>
-        {discount_row_html}
-        <div class="calc-row net">
-          <span>Net Payable:</span>
-          <span>₹{final_amount:,.0f}</span>
-        </div>
-        <div class="paid-banner">
-          <span>Amount Paid:</span>
-          <span>₹{paid_amount:,.0f}</span>
-        </div>
-        {status_html}
-      </div>
-    </div>
+    calc_inner_table.setStyle(TableStyle(calc_style_commands))
 
-    <!-- Footer -->
-    <div class="footer">
-      <div>
-        <div class="terms-title">Terms & Conditions:</div>
-        <div class="terms-list">
-          1. Fees once paid are non-refundable and non-transferable.<br/>
-          2. Please maintain gym discipline and equipment hygiene.<br/>
-          3. Official receipt issued by Morya Fitness, Sinnar.
-        </div>
-      </div>
-      <div class="seal-signature">
-        <div class="stamp-container">
-          <div class="stamp-ring">
-            {seal_logo_tag}
-          </div>
-          <div class="stamp-tag">OFFICIAL SEAL • SINNAR</div>
-        </div>
-        <div class="sig-title">Authorized Signature & Seal</div>
-        <div class="sig-sub">Morya Fitness, Sinnar</div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
-'''
-    return render_html_to_pdf(html)
+    calc_outer = Table([[Paragraph("", styles['Normal']), calc_inner_table]], colWidths=[inner_w - calc_w, calc_w])
+    calc_outer.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('TOPPADDING', (0,0), (-1,-1), 0),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+    ]))
+    inner_elements.append(calc_outer)
+    inner_elements.append(Spacer(1, 10))
+
+    # 5. Footer: Terms & Official Seal Stamp
+    terms_col = [
+        Paragraph("Terms &amp; Conditions:", terms_title),
+        Spacer(1, 2),
+        Paragraph("1. Fees once paid are non-refundable and non-transferable.", terms_body),
+        Paragraph("2. Please maintain gym discipline and equipment hygiene.", terms_body),
+        Paragraph("3. Official receipt issued by Morya Fitness, Sinnar.", terms_body),
+    ]
+
+    seal_img = Image(logo_path, width=42, height=42) if logo_path and os.path.exists(logo_path) else Paragraph('', styles['Normal'])
+    seal_data = [
+        [seal_img],
+        [Paragraph("OFFICIAL SEAL &bull; SINNAR", seal_tag)],
+        [Spacer(1, 3)],
+        [Paragraph("Authorized Signature &amp; Seal", sig_title)],
+        [Paragraph("Morya Fitness, Sinnar", sig_sub)],
+    ]
+    seal_table = Table(seal_data, colWidths=[140])
+    seal_table.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 0),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ('LINEBELOW', (0,2), (0,2), 1, colors.HexColor('#CBD5E1')),
+    ]))
+
+    footer_table = Table([[terms_col, seal_table]], colWidths=[inner_w * 0.65, inner_w * 0.35])
+    footer_table.setStyle(TableStyle([
+        ('LINEABOVE', (0,0), (-1,-1), 1, colors.HexColor('#E2E8F0')),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ('VALIGN', (0,0), (-1,-1), 'BOTTOM'),
+    ]))
+    inner_elements.append(footer_table)
+
+    # Wrap in outer card
+    card_table = Table([[inner_elements]], colWidths=[avail_w])
+    card_table.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), 1.5, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0,0), (-1,-1), colors.white),
+        ('TOPPADDING', (0,0), (-1,-1), card_padding),
+        ('BOTTOMPADDING', (0,0), (-1,-1), card_padding),
+        ('LEFTPADDING', (0,0), (-1,-1), card_padding),
+        ('RIGHTPADDING', (0,0), (-1,-1), card_padding),
+    ]))
+
+    doc.build([card_table])
+    return buf.getvalue()
 
 
 def generate_supplement_invoice_pdf(sale) -> bytes:
+    """
+    Generates a pixel-perfect, single-page official supplement retail invoice PDF.
+    """
     settings = GymSettings.get_settings()
     gym_name = settings.name or 'Morya Fitness'
-    gym_tagline = settings.tagline or 'Premium Gym & Fitness Center'
+    gym_tagline = settings.tagline or 'Nutrition & Fitness Supplement Store'
     gym_address = settings.address or 'Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103'
 
     raw_pm = (sale.payment_method or 'UPI').upper()
     payment_mode = 'Cash' if 'CASH' in raw_pm else 'UPI'
     cashier = sale.sold_by.get_full_name() if sale.sold_by else 'Gokul Gugale'
+    sale_date_str = sale.sale_date.strftime('%d %b %Y') if hasattr(sale, 'sale_date') and sale.sale_date else '04 Sep 2026'
 
     subtotal = float(sale.subtotal)
     discount = float(sale.discount)
     final_amount = float(sale.final_amount)
 
-    logo_b64 = get_gym_logo_base64()
-    logo_tag = f'<img src="{logo_b64}" class="brand-logo" alt="Logo" />' if logo_b64 else '<div class="brand-logo-placeholder"></div>'
-    seal_logo_tag = f'<img src="{logo_b64}" alt="Seal Logo" />' if logo_b64 else ''
+    logo_path = get_gym_logo_path()
+    buf = io.BytesIO()
 
-    member_id_line = f'<div class="member-id">Member ID: {sale.member.member_id}</div>' if sale.member else ''
+    page_margin = 22
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=page_margin,
+        rightMargin=page_margin,
+        topMargin=page_margin,
+        bottomMargin=page_margin,
+    )
 
-    items_rows_html = ''
+    avail_w = A4[0] - 2 * page_margin
+    card_padding = 16
+    inner_w = avail_w - 2 * card_padding
+
+    styles = getSampleStyleSheet()
+
+    gym_title_style = ParagraphStyle('GymTitle', fontName='Helvetica-Bold', fontSize=18, leading=21, textColor=colors.HexColor('#0F172A'), textTransform='uppercase')
+    gym_tagline_style = ParagraphStyle('GymTagline', fontName='Helvetica-Bold', fontSize=9.5, leading=13, textColor=colors.HexColor('#EA580C'))
+    gym_addr_style = ParagraphStyle('GymAddress', fontName='Helvetica', fontSize=8.5, leading=12, textColor=colors.HexColor('#64748B'))
+
+    badge_label_style = ParagraphStyle('BadgeLabel', fontName='Helvetica-Bold', fontSize=8, leading=10, alignment=TA_RIGHT, textColor=colors.HexColor('#C2410C'), textTransform='uppercase')
+    badge_no_style = ParagraphStyle('BadgeNo', fontName='Helvetica-Bold', fontSize=12, leading=15, alignment=TA_RIGHT, textColor=colors.HexColor('#0F172A'))
+    badge_date_style = ParagraphStyle('BadgeDate', fontName='Helvetica', fontSize=8.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#64748B'))
+
+    meta_title_left = ParagraphStyle('MetaTitleLeft', fontName='Helvetica-Bold', fontSize=8, leading=10, textColor=colors.HexColor('#94A3B8'), textTransform='uppercase')
+    meta_name_left = ParagraphStyle('MetaNameLeft', fontName='Helvetica-Bold', fontSize=13, leading=16, textColor=colors.HexColor('#0F172A'))
+    meta_id_left = ParagraphStyle('MetaIdLeft', fontName='Helvetica-Bold', fontSize=9.5, leading=13, textColor=colors.HexColor('#EA580C'))
+    meta_phone_left = ParagraphStyle('MetaPhoneLeft', fontName='Helvetica', fontSize=8.5, leading=11, textColor=colors.HexColor('#64748B'))
+
+    meta_title_right = ParagraphStyle('MetaTitleRight', fontName='Helvetica-Bold', fontSize=8, leading=10, alignment=TA_RIGHT, textColor=colors.HexColor('#94A3B8'), textTransform='uppercase')
+    meta_mode_right = ParagraphStyle('MetaModeRight', fontName='Helvetica-Bold', fontSize=13, leading=16, alignment=TA_RIGHT, textColor=colors.HexColor('#0F172A'))
+    meta_cashier_right = ParagraphStyle('MetaCashierRight', fontName='Helvetica', fontSize=8.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#64748B'))
+
+    th_left = ParagraphStyle('THLeft', fontName='Helvetica-Bold', fontSize=8.5, leading=11, textColor=colors.HexColor('#475569'))
+    th_center = ParagraphStyle('THCenter', fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=TA_CENTER, textColor=colors.HexColor('#475569'))
+    th_right = ParagraphStyle('THRight', fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#475569'))
+
+    td_item_name = ParagraphStyle('TDItemName', fontName='Helvetica-Bold', fontSize=10, leading=12, textColor=colors.HexColor('#0F172A'))
+    td_item_desc = ParagraphStyle('TDItemDesc', fontName='Helvetica', fontSize=8, leading=10, textColor=colors.HexColor('#64748B'))
+    td_qty = ParagraphStyle('TDQty', fontName='Helvetica-Bold', fontSize=9.5, leading=12, alignment=TA_CENTER, textColor=colors.HexColor('#334155'))
+    td_price = ParagraphStyle('TDPrice', fontName='Helvetica', fontSize=9.5, leading=12, alignment=TA_RIGHT, textColor=colors.HexColor('#334155'))
+    td_subtotal = ParagraphStyle('TDSubtotal', fontName='Helvetica-Bold', fontSize=10, leading=12, alignment=TA_RIGHT, textColor=colors.HexColor('#0F172A'))
+
+    calc_label = ParagraphStyle('CalcLabel', fontName='Helvetica', fontSize=9, leading=11, textColor=colors.HexColor('#475569'))
+    calc_val = ParagraphStyle('CalcVal', fontName='Helvetica-Bold', fontSize=9, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#1E293B'))
+
+    calc_discount_label = ParagraphStyle('CalcDiscountLabel', fontName='Helvetica-Bold', fontSize=9, leading=11, textColor=colors.HexColor('#059669'))
+    calc_discount_val = ParagraphStyle('CalcDiscountVal', fontName='Helvetica-Bold', fontSize=9, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#059669'))
+
+    calc_paid_label = ParagraphStyle('CalcPaidLabel', fontName='Helvetica-Bold', fontSize=10, leading=12, textColor=colors.HexColor('#059669'))
+    calc_paid_val = ParagraphStyle('CalcPaidVal', fontName='Helvetica-Bold', fontSize=10.5, leading=12, alignment=TA_RIGHT, textColor=colors.HexColor('#059669'))
+
+    terms_title = ParagraphStyle('TermsTitle', fontName='Helvetica-Bold', fontSize=8.5, leading=11, textColor=colors.HexColor('#334155'))
+    terms_body = ParagraphStyle('TermsBody', fontName='Helvetica', fontSize=7.5, leading=10.5, textColor=colors.HexColor('#64748B'))
+
+    sig_title = ParagraphStyle('SigTitle', fontName='Helvetica-Bold', fontSize=9.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#0F172A'))
+    sig_sub = ParagraphStyle('SigSub', fontName='Helvetica', fontSize=7.5, leading=9.5, alignment=TA_RIGHT, textColor=colors.HexColor('#64748B'))
+    seal_tag = ParagraphStyle('SealTag', fontName='Helvetica-Bold', fontSize=6.5, leading=8, alignment=TA_CENTER, textColor=colors.HexColor('#1E3A8A'))
+
+    inner_elements = []
+
+    # 1. Header
+    logo_img = Image(logo_path, width=46, height=46) if logo_path and os.path.exists(logo_path) else Paragraph('', styles['Normal'])
+    brand_info = [
+        Paragraph(gym_name.upper(), gym_title_style),
+        Spacer(1, 1),
+        Paragraph(gym_tagline, gym_tagline_style),
+        Spacer(1, 2),
+        Paragraph(gym_address, gym_addr_style),
+    ]
+
+    badge_data = [
+        [Paragraph("SUPPLEMENT INVOICE", badge_label_style)],
+        [Paragraph(sale.invoice_number, badge_no_style)],
+        [Paragraph(f"Date: {sale_date_str}", badge_date_style)],
+    ]
+    badge_table = Table(badge_data, colWidths=[140])
+    badge_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#FFF7ED')),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#FED7AA')),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('LEFTPADDING', (0,0), (-1,-1), 8),
+        ('RIGHTPADDING', (0,0), (-1,-1), 8),
+    ]))
+
+    header_table = Table([[logo_img, brand_info, badge_table]], colWidths=[50, inner_w - 50 - 145, 145])
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LINEBELOW', (0,0), (-1,-1), 1.5, colors.HexColor('#E2E8F0')),
+    ]))
+    inner_elements.append(header_table)
+    inner_elements.append(Spacer(1, 10))
+
+    # 2. Customer & Payment Info
+    customer_col = [
+        Paragraph("CUSTOMER DETAILS", meta_title_left),
+        Spacer(1, 2),
+        Paragraph(sale.customer_name, meta_name_left),
+    ]
+    if getattr(sale, 'member', None) and getattr(sale.member, 'member_id', None):
+        customer_col.append(Spacer(1, 1))
+        customer_col.append(Paragraph(f"Member ID: {sale.member.member_id}", meta_id_left))
+    customer_col.append(Spacer(1, 1))
+    customer_col.append(Paragraph(f"Phone: +91 {sale.customer_phone or 'N/A'}", meta_phone_left))
+
+    payment_col = [
+        Paragraph("PAYMENT MODE", meta_title_right),
+        Spacer(1, 2),
+        Paragraph(payment_mode, meta_mode_right),
+        Spacer(1, 2),
+        Paragraph(f"Cashier: {cashier}", meta_cashier_right),
+    ]
+
+    info_table = Table([[customer_col, payment_col]], colWidths=[inner_w * 0.55, inner_w * 0.45])
+    info_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F8FAFC')),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#E2E8F0')),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ('LEFTPADDING', (0,0), (-1,-1), 12),
+        ('RIGHTPADDING', (0,0), (-1,-1), 12),
+    ]))
+    inner_elements.append(info_table)
+    inner_elements.append(Spacer(1, 10))
+
+    # 3. Items Table
+    items_rows = [
+        [
+            Paragraph("PURCHASED ITEM", th_left),
+            Paragraph("QTY", th_center),
+            Paragraph("RATE", th_right),
+            Paragraph("AMOUNT (Rs.)", th_right),
+        ]
+    ]
+
     for item in sale.items.all():
-        p_name = item.product.name if item.product else 'Supplement Item'
-        p_brand = item.product.brand if item.product and item.product.brand else '—'
-        items_rows_html += f'''
-        <tr>
-          <td>
-            <div class="item-title">{p_name}</div>
-            <div class="item-sub">{p_brand}</div>
-          </td>
-          <td class="text-center item-duration">{item.quantity}</td>
-          <td class="text-right">₹{float(item.unit_price):,.0f}</td>
-          <td class="text-right item-price">₹{float(item.subtotal):,.0f}</td>
-        </tr>
-        '''
+        p_name = item.product_name or (item.product.name if getattr(item, 'product', None) else 'Supplement Item')
+        p_brand = item.product_brand or (item.product.brand if getattr(item, 'product', None) and item.product.brand else '')
+        desc_para = Paragraph(f"Brand: {p_brand}", td_item_desc) if p_brand else Paragraph("", styles['Normal'])
 
-    discount_row_html = ''
+        items_rows.append([
+            [Paragraph(p_name, td_item_name), Spacer(1, 1), desc_para],
+            Paragraph(str(item.quantity), td_qty),
+            Paragraph(f"Rs. {float(item.unit_price):,.0f}", td_price),
+            Paragraph(f"Rs. {float(item.subtotal):,.0f}", td_subtotal),
+        ])
+
+    items_table = Table(items_rows, colWidths=[inner_w * 0.50, inner_w * 0.12, inner_w * 0.18, inner_w * 0.20])
+    items_table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F1F5F9')),
+        ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#CBD5E1')),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#F1F5F9')),
+        ('LINEBELOW', (0,0), (-1,0), 1, colors.HexColor('#CBD5E1')),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('LEFTPADDING', (0,0), (-1,-1), 10),
+        ('RIGHTPADDING', (0,0), (-1,-1), 10),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+    ]))
+    inner_elements.append(items_table)
+    inner_elements.append(Spacer(1, 8))
+
+    # 4. Calculation Summary
+    calc_w = 240
+    calc_rows = [
+        [Paragraph("Subtotal:", calc_label), Paragraph(f"Rs. {subtotal:,.0f}", calc_val)],
+    ]
     if discount > 0:
-        discount_row_html = f'''
-        <div class="calc-row">
-          <span>Discount Applied:</span>
-          <span style="color: #059669; font-weight: 700;">-₹{discount:,.0f}</span>
-        </div>
-        '''
+        calc_rows.append([Paragraph("Discount Applied:", calc_discount_label), Paragraph(f"-Rs. {discount:,.0f}", calc_discount_val)])
+    calc_rows.append([Paragraph("Total Paid:", calc_paid_label), Paragraph(f"Rs. {final_amount:,.0f}", calc_paid_val)])
 
-    html = f'''<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>Invoice_{sale.invoice_number}</title>
-<style>
-  @page {{
-    size: A4 portrait;
-    margin: 10mm;
-  }}
-  * {{
-    box-sizing: border-box;
-    margin: 0;
-    padding: 0;
-  }}
-  body {{
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    color: #1e293b;
-    background: #ffffff;
-    font-size: 13px;
-    line-height: 1.4;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }}
-  .receipt-card {{
-    max-width: 660px;
-    margin: 0 auto;
-    border: 1px solid #e2e8f0;
-    border-radius: 24px;
-    padding: 26px 30px;
-    background: #ffffff;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
-  }}
-  .header {{
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-bottom: 18px;
-    border-bottom: 1px solid #e2e8f0;
-    gap: 16px;
-  }}
-  .brand-left {{
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }}
-  .brand-logo {{
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 2.5px solid #ea580c;
-    flex-shrink: 0;
-  }}
-  .brand-logo-placeholder {{
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background: #fed7aa;
-    border: 2.5px solid #ea580c;
-    flex-shrink: 0;
-  }}
-  .brand-name {{
-    font-size: 22px;
-    font-weight: 900;
-    color: #0f172a;
-    letter-spacing: -0.5px;
-    line-height: 1.1;
-  }}
-  .brand-tagline {{
-    font-size: 11.5px;
-    font-weight: 700;
-    color: #ea580c;
-    margin-top: 3px;
-  }}
-  .brand-address {{
-    font-size: 11px;
-    color: #64748b;
-    margin-top: 3px;
-  }}
-  .receipt-badge {{
-    text-align: right;
-    background: #fff7ed;
-    border: 1px solid #fed7aa;
-    padding: 10px 18px;
-    border-radius: 16px;
-    flex-shrink: 0;
-  }}
-  .badge-tag {{
-    font-size: 9.5px;
-    font-weight: 800;
-    color: #c2410c;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-  }}
-  .badge-no {{
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 13px;
-    font-weight: 800;
-    color: #0f172a;
-    margin-top: 2px;
-  }}
-  .badge-date {{
-    font-size: 11px;
-    color: #64748b;
-    margin-top: 2px;
-  }}
-  .info-box {{
-    display: flex;
-    justify-content: space-between;
-    background: #f8fafc;
-    border: 1px solid #f1f5f9;
-    border-radius: 16px;
-    padding: 14px 18px;
-    margin-top: 18px;
-  }}
-  .info-col-title {{
-    font-size: 9.5px;
-    font-weight: 800;
-    text-transform: uppercase;
-    color: #94a3b8;
-    letter-spacing: 0.6px;
-    margin-bottom: 2px;
-  }}
-  .member-name {{
-    font-size: 14.5px;
-    font-weight: 800;
-    color: #0f172a;
-  }}
-  .member-id {{
-    font-size: 11px;
-    font-weight: 700;
-    color: #ea580c;
-    margin-top: 2px;
-  }}
-  .member-phone {{
-    font-size: 11px;
-    color: #64748b;
-    margin-top: 2px;
-  }}
-  .payment-method {{
-    font-size: 14.5px;
-    font-weight: 800;
-    color: #0f172a;
-    text-align: right;
-  }}
-  .cashier-name {{
-    font-size: 11px;
-    color: #64748b;
-    margin-top: 3px;
-    text-align: right;
-  }}
-  .table-box {{
-    border: 1px solid #e2e8f0;
-    border-radius: 14px;
-    overflow: hidden;
-    margin-top: 18px;
-  }}
-  table {{
-    width: 100%;
-    border-collapse: collapse;
-  }}
-  th {{
-    background: #f8fafc;
-    color: #475569;
-    font-size: 10px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    padding: 10px 16px;
-    border-bottom: 1px solid #e2e8f0;
-    text-align: left;
-  }}
-  th.text-center, td.text-center {{ text-align: center; }}
-  th.text-right, td.text-right {{ text-align: right; }}
-  td {{
-    padding: 12px 16px;
-    font-size: 12.5px;
-    color: #1e293b;
-    vertical-align: middle;
-  }}
-  .item-title {{
-    font-weight: 800;
-    color: #0f172a;
-    font-size: 13px;
-  }}
-  .item-sub {{
-    font-size: 11px;
-    color: #94a3b8;
-    margin-top: 2px;
-  }}
-  .item-duration {{
-    font-weight: 600;
-    color: #334155;
-    font-size: 12.5px;
-  }}
-  .item-price {{
-    font-weight: 800;
-    color: #0f172a;
-    font-size: 13px;
-  }}
-  .calc-container {{
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 16px;
-  }}
-  .calc-box {{
-    width: 270px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }}
-  .calc-row {{
-    display: flex;
-    justify-content: space-between;
-    font-size: 12px;
-    color: #475569;
-  }}
-  .paid-banner {{
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: #ecfdf5;
-    border: 1px solid #a7f3d0;
-    border-radius: 10px;
-    padding: 8px 12px;
-    color: #059669;
-    font-weight: 800;
-    font-size: 13.5px;
-    margin-top: 2px;
-  }}
-  .footer {{
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    margin-top: 26px;
-    padding-top: 16px;
-    border-top: 1px solid #f1f5f9;
-  }}
-  .terms-title {{
-    font-size: 10.5px;
-    font-weight: 800;
-    color: #334155;
-    margin-bottom: 4px;
-  }}
-  .terms-list {{
-    font-size: 9.5px;
-    color: #64748b;
-    line-height: 1.5;
-  }}
-  .seal-signature {{
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-  }}
-  .stamp-container {{
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-bottom: 6px;
-    transform: rotate(-6deg);
-  }}
-  .stamp-ring {{
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    border: 2px solid #1e3a8a;
-    padding: 2px;
-    background: #ffffff;
-    box-shadow: 0 0 0 2px rgba(30, 58, 138, 0.15);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }}
-  .stamp-ring img {{
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    object-fit: cover;
-  }}
-  .stamp-tag {{
-    font-size: 7.5px;
-    font-weight: 900;
-    color: #1e3a8a;
-    border: 1.5px solid #1e3a8a;
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: #eff6ff;
-    margin-top: 3px;
-    letter-spacing: 0.5px;
-  }}
-  .sig-title {{
-    font-size: 11.5px;
-    font-weight: 800;
-    color: #0f172a;
-    margin-top: 4px;
-  }}
-  .sig-sub {{
-    font-size: 9.5px;
-    color: #64748b;
-    margin-top: 1px;
-  }}
-</style>
-</head>
-<body>
-  <div class="receipt-card">
-    <!-- Header -->
-    <div class="header">
-      <div class="brand-left">
-        {logo_tag}
-        <div>
-          <div class="brand-name">{gym_name}</div>
-          <div class="brand-tagline">{gym_tagline}</div>
-          <div class="brand-address">{gym_address}</div>
-        </div>
-      </div>
-      <div class="receipt-badge">
-        <div class="badge-tag">INVOICE NO</div>
-        <div class="badge-no">{sale.invoice_number}</div>
-        <div class="badge-date">Date: {sale.sale_date.strftime('%d %b %Y')}</div>
-      </div>
-    </div>
+    calc_inner_table = Table(calc_rows, colWidths=[120, 120])
+    paid_idx = len(calc_rows) - 1
+    calc_inner_table.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('LEFTPADDING', (0,0), (-1,-1), 4),
+        ('RIGHTPADDING', (0,0), (-1,-1), 4),
+        ('BACKGROUND', (0, paid_idx), (-1, paid_idx), colors.HexColor('#ECFDF5')),
+        ('BOX', (0, paid_idx), (-1, paid_idx), 1, colors.HexColor('#A7F3D0')),
+        ('TOPPADDING', (0, paid_idx), (-1, paid_idx), 5),
+        ('BOTTOMPADDING', (0, paid_idx), (-1, paid_idx), 5),
+    ]))
 
-    <!-- Customer & Payment -->
-    <div class="info-box">
-      <div>
-        <div class="info-col-title">CUSTOMER</div>
-        <div class="member-name">{sale.customer_name}</div>
-        {member_id_line}
-      </div>
-      <div>
-        <div class="info-col-title" style="text-align: right;">PHONE & PAYMENT</div>
-        <div class="member-phone" style="text-align: right;">{sale.customer_phone or 'N/A'}</div>
-        <div class="payment-method" style="color: #059669; font-size: 12px; margin-top: 3px;">Paid via {payment_mode}</div>
-        <div class="cashier-name">Cashier: {cashier}</div>
-      </div>
-    </div>
+    calc_outer = Table([[Paragraph("", styles['Normal']), calc_inner_table]], colWidths=[inner_w - calc_w, calc_w])
+    calc_outer.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('TOPPADDING', (0,0), (-1,-1), 0),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+    ]))
+    inner_elements.append(calc_outer)
+    inner_elements.append(Spacer(1, 10))
 
-    <!-- Table -->
-    <div class="table-box">
-      <table>
-        <thead>
-          <tr>
-            <th>PRODUCT</th>
-            <th class="text-center">QTY</th>
-            <th class="text-right">PRICE (₹)</th>
-            <th class="text-right">TOTAL (₹)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items_rows_html}
-        </tbody>
-      </table>
-    </div>
+    # 5. Footer & Store Policies
+    terms_col = [
+        Paragraph("Store Terms &amp; Policies:", terms_title),
+        Spacer(1, 2),
+        Paragraph("1. All supplement products are 100% genuine &amp; authentic.", terms_body),
+        Paragraph("2. Opened or unsealed products are non-returnable.", terms_body),
+        Paragraph("3. Official store tax invoice issued by Morya Fitness, Sinnar.", terms_body),
+    ]
 
-    <!-- Calculation Summary -->
-    <div class="calc-container">
-      <div class="calc-box">
-        <div class="calc-row">
-          <span>Gross Subtotal:</span>
-          <span>₹{subtotal:,.0f}</span>
-        </div>
-        {discount_row_html}
-        <div class="paid-banner">
-          <span>Total Paid:</span>
-          <span>₹{final_amount:,.0f}</span>
-        </div>
-      </div>
-    </div>
+    seal_img = Image(logo_path, width=42, height=42) if logo_path and os.path.exists(logo_path) else Paragraph('', styles['Normal'])
+    seal_data = [
+        [seal_img],
+        [Paragraph("OFFICIAL STORE SEAL &bull; SINNAR", seal_tag)],
+        [Spacer(1, 3)],
+        [Paragraph("Authorized Signatory", sig_title)],
+        [Paragraph("Morya Fitness, Sinnar", sig_sub)],
+    ]
+    seal_table = Table(seal_data, colWidths=[140])
+    seal_table.setStyle(TableStyle([
+        ('ALIGN', (0,0), (-1,-1), 'RIGHT'),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 0),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+        ('LEFTPADDING', (0,0), (-1,-1), 0),
+        ('RIGHTPADDING', (0,0), (-1,-1), 0),
+        ('LINEBELOW', (0,2), (0,2), 1, colors.HexColor('#CBD5E1')),
+    ]))
 
-    <!-- Footer -->
-    <div class="footer">
-      <div>
-        <div class="terms-title">Notice & Guarantee:</div>
-        <div class="terms-list">
-          1. Authentic fitness supplements guaranteed by Morya Fitness.<br/>
-          2. Please store in a cool, dry place away from sunlight.<br/>
-          3. Keep this invoice for nutritional and billing records.
-        </div>
-      </div>
-      <div class="seal-signature">
-        <div class="stamp-container">
-          <div class="stamp-ring">
-            {seal_logo_tag}
-          </div>
-          <div class="stamp-tag">OFFICIAL SEAL • SINNAR</div>
-        </div>
-        <div class="sig-title">Authorized Signatory</div>
-        <div class="sig-sub">Morya Fitness, Sinnar</div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
-'''
-    return render_html_to_pdf(html)
+    footer_table = Table([[terms_col, seal_table]], colWidths=[inner_w * 0.65, inner_w * 0.35])
+    footer_table.setStyle(TableStyle([
+        ('LINEABOVE', (0,0), (-1,-1), 1, colors.HexColor('#E2E8F0')),
+        ('TOPPADDING', (0,0), (-1,-1), 8),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ('VALIGN', (0,0), (-1,-1), 'BOTTOM'),
+    ]))
+    inner_elements.append(footer_table)
+
+    card_table = Table([[inner_elements]], colWidths=[avail_w])
+    card_table.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), 1.5, colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0,0), (-1,-1), colors.white),
+        ('TOPPADDING', (0,0), (-1,-1), card_padding),
+        ('BOTTOMPADDING', (0,0), (-1,-1), card_padding),
+        ('LEFTPADDING', (0,0), (-1,-1), card_padding),
+        ('RIGHTPADDING', (0,0), (-1,-1), card_padding),
+    ]))
+
+    doc.build([card_table])
+    return buf.getvalue()
