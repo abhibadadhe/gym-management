@@ -617,11 +617,10 @@ export const Login: React.FC = () => {
                     setUsernameError(null);
                     setUsernameMessage(null);
                   }}
-                  className={`py-2 rounded-lg transition-all ${
-                    usernameTab === 'reset'
-                      ? 'bg-white text-blue-600 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                  className={`py-2 rounded-lg transition-all ${usernameTab === 'reset'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                    }`}
                 >
                   Reset / Change Username
                 </button>
@@ -632,11 +631,10 @@ export const Login: React.FC = () => {
                     setUsernameError(null);
                     setUsernameMessage(null);
                   }}
-                  className={`py-2 rounded-lg transition-all ${
-                    usernameTab === 'lookup'
-                      ? 'bg-white text-blue-600 shadow-sm'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                  className={`py-2 rounded-lg transition-all ${usernameTab === 'lookup'
+                    ? 'bg-white text-blue-600 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                    }`}
                 >
                   Find Current Username
                 </button>
@@ -681,7 +679,7 @@ export const Login: React.FC = () => {
                           type="email"
                           value={recoveryEmail}
                           onChange={(e) => setRecoveryEmail(e.target.value)}
-                          placeholder="e.g. gokulgugale99@gmail.com"
+                          placeholder="e.g. xyz@gmail.com"
                           className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white font-medium"
                           required
                           autoFocus
@@ -790,7 +788,7 @@ export const Login: React.FC = () => {
                       type="email"
                       value={recoveryEmail}
                       onChange={(e) => setRecoveryEmail(e.target.value)}
-                      placeholder="e.g. gokulgugale99@gmail.com"
+                      placeholder="e.g. xyz@gmail.com"
                       className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white font-medium"
                       required
                       autoFocus
