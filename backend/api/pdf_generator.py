@@ -175,7 +175,7 @@ def generate_payment_receipt_pdf(payment) -> bytes:
         Spacer(1, 1),
         Paragraph(gym_tagline, gym_tagline_style),
         Spacer(1, 2),
-        Paragraph(gym_address, gym_addr_style),
+        Paragraph(f"{gym_address}<br/>Phone: +91 7219188002 | UPI: 7219188002@ybl", gym_addr_style),
     ]
 
     badge_data = [
@@ -204,16 +204,16 @@ def generate_payment_receipt_pdf(payment) -> bytes:
 
     # 2. Member & Payment Information Box
     member_col = [
-        Paragraph("MEMBER DETAILS", meta_title_left),
+        Paragraph("RECEIVED FROM", meta_title_left),
         Spacer(1, 2),
         Paragraph(member.full_name, meta_name_left),
         Spacer(1, 1),
-        Paragraph(f"ID: {member.member_id}", meta_id_left),
+        Paragraph(f"Member ID: {member.member_id}", meta_id_left),
         Spacer(1, 1),
-        Paragraph(f"Phone: +91 {member.phone}", meta_phone_left),
+        Paragraph(f"Mobile: +91 {member.phone}", meta_phone_left),
     ]
     payment_col = [
-        Paragraph("PAYMENT MODE", meta_title_right),
+        Paragraph("PAYMENT DETAILS", meta_title_right),
         Spacer(1, 2),
         Paragraph(payment_mode, meta_mode_right),
     ]
@@ -238,12 +238,12 @@ def generate_payment_receipt_pdf(payment) -> bytes:
     # 3. Itemized Fee Table
     items_data = [
         [
-            Paragraph("MEMBERSHIP ITEM", th_left),
-            Paragraph("VALIDITY", th_center),
-            Paragraph("AMOUNT (Rs.)", th_right)
+            Paragraph("MEMBERSHIP PARTICULARS", th_left),
+            Paragraph("VALIDITY PERIOD", th_center),
+            Paragraph("RATE (INR)", th_right)
         ],
         [
-            [Paragraph(plan_name, td_item_name), Spacer(1, 1), Paragraph("General gym &amp; equipment access", td_item_desc)],
+            [Paragraph(plan_name, td_item_name), Spacer(1, 1), Paragraph("Full Gym &amp; Equipment Access", td_item_desc)],
             Paragraph(f"{duration_days} Days", td_val),
             Paragraph(f"Rs. {plan_price:,.0f}", td_amt)
         ]
@@ -266,17 +266,17 @@ def generate_payment_receipt_pdf(payment) -> bytes:
     # 4. Financial Calculation Summary (Aligned to Right)
     calc_w = 240
     calc_rows = [
-        [Paragraph("Plan Base Amount:", calc_label), Paragraph(f"Rs. {plan_price:,.0f}", calc_val)],
+        [Paragraph("Plan Base Fee:", calc_label), Paragraph(f"Rs. {plan_price:,.0f}", calc_val)],
     ]
     if discount > 0:
         calc_rows.append([Paragraph("Discount Applied:", calc_discount_label), Paragraph(f"-Rs. {discount:,.0f}", calc_discount_val)])
     calc_rows.append([Paragraph("Net Payable:", calc_net_label), Paragraph(f"Rs. {final_amount:,.0f}", calc_net_val)])
-    calc_rows.append([Paragraph("Amount Paid:", calc_paid_label), Paragraph(f"Rs. {paid_amount:,.0f}", calc_paid_val)])
+    calc_rows.append([Paragraph("Amount Paid (INR):", calc_paid_label), Paragraph(f"Rs. {paid_amount:,.0f}", calc_paid_val)])
 
     if remaining_dues > 0:
-        calc_rows.append([Paragraph("Balance Dues:", calc_due_label), Paragraph(f"Rs. {remaining_dues:,.0f}", calc_due_val)])
+        calc_rows.append([Paragraph("Balance Due:", calc_due_label), Paragraph(f"Rs. {remaining_dues:,.0f}", calc_due_val)])
     else:
-        calc_rows.append([Paragraph("Payment Status:", calc_status_label), Paragraph("✓ Settled in Full", calc_status_val)])
+        calc_rows.append([Paragraph("Payment Status:", calc_status_label), Paragraph("✓ Paid in Full", calc_status_val)])
 
     calc_inner_table = Table(calc_rows, colWidths=[120, 120])
     paid_row_idx = len(calc_rows) - 2
@@ -328,8 +328,8 @@ def generate_payment_receipt_pdf(payment) -> bytes:
         Paragraph("Terms &amp; Conditions:", terms_title),
         Spacer(1, 2),
         Paragraph("1. Fees once paid are non-refundable and non-transferable.", terms_body),
-        Paragraph("2. Please maintain gym discipline and equipment hygiene.", terms_body),
-        Paragraph("3. Official receipt issued by Morya Fitness, Sinnar.", terms_body),
+        Paragraph("2. Please maintain gym hygiene, discipline, and equipment care.", terms_body),
+        Paragraph("3. Official computer-generated receipt for Morya Fitness, Sinnar.", terms_body),
     ]
 
     seal_img = Image(logo_path, width=42, height=42) if logo_path and os.path.exists(logo_path) else Paragraph('', styles['Normal'])
@@ -464,11 +464,11 @@ def generate_supplement_invoice_pdf(sale) -> bytes:
         Spacer(1, 1),
         Paragraph(gym_tagline, gym_tagline_style),
         Spacer(1, 2),
-        Paragraph(gym_address, gym_addr_style),
+        Paragraph(f"{gym_address}<br/>Phone: +91 7219188002 | UPI: 7219188002@ybl", gym_addr_style),
     ]
 
     badge_data = [
-        [Paragraph("SUPPLEMENT INVOICE", badge_label_style)],
+        [Paragraph("OFFICIAL RETAIL INVOICE", badge_label_style)],
         [Paragraph(sale.invoice_number, badge_no_style)],
         [Paragraph(f"Date: {sale_date_str}", badge_date_style)],
     ]
@@ -493,7 +493,7 @@ def generate_supplement_invoice_pdf(sale) -> bytes:
 
     # 2. Customer & Payment Info
     customer_col = [
-        Paragraph("CUSTOMER DETAILS", meta_title_left),
+        Paragraph("BILLED TO", meta_title_left),
         Spacer(1, 2),
         Paragraph(sale.customer_name, meta_name_left),
     ]
@@ -501,10 +501,10 @@ def generate_supplement_invoice_pdf(sale) -> bytes:
         customer_col.append(Spacer(1, 1))
         customer_col.append(Paragraph(f"Member ID: {sale.member.member_id}", meta_id_left))
     customer_col.append(Spacer(1, 1))
-    customer_col.append(Paragraph(f"Phone: +91 {sale.customer_phone or 'N/A'}", meta_phone_left))
+    customer_col.append(Paragraph(f"Mobile: +91 {sale.customer_phone or '—'}", meta_phone_left))
 
     payment_col = [
-        Paragraph("PAYMENT MODE", meta_title_right),
+        Paragraph("PAYMENT DETAILS", meta_title_right),
         Spacer(1, 2),
         Paragraph(payment_mode, meta_mode_right),
         Spacer(1, 2),
@@ -526,10 +526,10 @@ def generate_supplement_invoice_pdf(sale) -> bytes:
     # 3. Items Table
     items_rows = [
         [
-            Paragraph("PURCHASED ITEM", th_left),
+            Paragraph("ITEM DESCRIPTION", th_left),
             Paragraph("QTY", th_center),
-            Paragraph("RATE", th_right),
-            Paragraph("AMOUNT (Rs.)", th_right),
+            Paragraph("UNIT PRICE", th_right),
+            Paragraph("TOTAL (INR)", th_right),
         ]
     ]
 
@@ -566,21 +566,29 @@ def generate_supplement_invoice_pdf(sale) -> bytes:
         [Paragraph("Subtotal:", calc_label), Paragraph(f"Rs. {subtotal:,.0f}", calc_val)],
     ]
     if discount > 0:
-        calc_rows.append([Paragraph("Discount Applied:", calc_discount_label), Paragraph(f"-Rs. {discount:,.0f}", calc_discount_val)])
-    calc_rows.append([Paragraph("Total Paid:", calc_paid_label), Paragraph(f"Rs. {final_amount:,.0f}", calc_paid_val)])
+        calc_rows.append([Paragraph("Discount:", calc_discount_label), Paragraph(f"-Rs. {discount:,.0f}", calc_discount_val)])
+    calc_rows.append([Paragraph("Net Payable:", calc_net_label), Paragraph(f"Rs. {final_amount:,.0f}", calc_net_val)])
+    calc_rows.append([Paragraph("Amount Paid (INR):", calc_paid_label), Paragraph(f"Rs. {final_amount:,.0f}", calc_paid_val)])
+    calc_rows.append([Paragraph("Payment Status:", calc_status_label), Paragraph("✓ Paid in Full", calc_status_val)])
 
     calc_inner_table = Table(calc_rows, colWidths=[120, 120])
-    paid_idx = len(calc_rows) - 1
+    paid_idx = len(calc_rows) - 2
+    status_idx = len(calc_rows) - 1
     calc_inner_table.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING', (0,0), (-1,-1), 3),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('TOPPADDING', (0,0), (-1,-1), 2.5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2.5),
         ('LEFTPADDING', (0,0), (-1,-1), 4),
         ('RIGHTPADDING', (0,0), (-1,-1), 4),
+        ('LINEABOVE', (0, paid_idx - 1), (-1, paid_idx - 1), 1, colors.HexColor('#E2E8F0')),
         ('BACKGROUND', (0, paid_idx), (-1, paid_idx), colors.HexColor('#ECFDF5')),
         ('BOX', (0, paid_idx), (-1, paid_idx), 1, colors.HexColor('#A7F3D0')),
         ('TOPPADDING', (0, paid_idx), (-1, paid_idx), 5),
         ('BOTTOMPADDING', (0, paid_idx), (-1, paid_idx), 5),
+        ('BACKGROUND', (0, status_idx), (-1, status_idx), colors.HexColor('#ECFDF5')),
+        ('BOX', (0, status_idx), (-1, status_idx), 1, colors.HexColor('#A7F3D0')),
+        ('TOPPADDING', (0, status_idx), (-1, status_idx), 4),
+        ('BOTTOMPADDING', (0, status_idx), (-1, status_idx), 4),
     ]))
 
     calc_outer = Table([[Paragraph("", styles['Normal']), calc_inner_table]], colWidths=[inner_w - calc_w, calc_w])
@@ -598,17 +606,17 @@ def generate_supplement_invoice_pdf(sale) -> bytes:
     terms_col = [
         Paragraph("Store Terms &amp; Policies:", terms_title),
         Spacer(1, 2),
-        Paragraph("1. All supplement products are 100% genuine &amp; authentic.", terms_body),
+        Paragraph("1. Authentic fitness supplements guaranteed by Morya Fitness.", terms_body),
         Paragraph("2. Opened or unsealed products are non-returnable.", terms_body),
-        Paragraph("3. Official store tax invoice issued by Morya Fitness, Sinnar.", terms_body),
+        Paragraph("3. Official computer-generated retail invoice for Morya Fitness, Sinnar.", terms_body),
     ]
 
     seal_img = Image(logo_path, width=42, height=42) if logo_path and os.path.exists(logo_path) else Paragraph('', styles['Normal'])
     seal_data = [
         [seal_img],
-        [Paragraph("OFFICIAL STORE SEAL &bull; SINNAR", seal_tag)],
+        [Paragraph("OFFICIAL SEAL &bull; SINNAR", seal_tag)],
         [Spacer(1, 3)],
-        [Paragraph("Authorized Signatory", sig_title)],
+        [Paragraph("Authorized Signature &amp; Seal", sig_title)],
         [Paragraph("Morya Fitness, Sinnar", sig_sub)],
     ]
     seal_table = Table(seal_data, colWidths=[140])

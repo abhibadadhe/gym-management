@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Printer, X, CheckCircle2, ShoppingBag, MapPin,
+  Printer, X, CheckCircle2, ShoppingBag,
   MessageSquare, RefreshCw
 } from 'lucide-react';
 import { SupplementReceiptData } from '../../types';
@@ -129,30 +129,24 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
   };
 
   const handlePrint = () => {
+    const el = document.getElementById('printable-supplement-invoice');
+    if (!el) {
+      window.print();
+      return;
+    }
     const printWindow = window.open('', '_blank', 'width=800,height=900');
     if (!printWindow) {
       showToast('Please allow popups in your browser to print the invoice.', 'error');
       return;
     }
 
-    const itemsRowsHtml = receipt.items.map((item, idx) => `
-      <tr>
-        <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #0f172a;">
-          ${idx + 1}. ${item.name}
-          ${item.brand ? `<span style="display:block; font-size: 10px; color: #64748b; font-weight: normal;">Brand: ${item.brand}</span>` : ''}
-        </td>
-        <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: 700;">${item.quantity}</td>
-        <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: right;">₹${item.unit_price.toLocaleString('en-IN')}</td>
-        <td style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 700; color: #0f172a;">₹${item.subtotal.toLocaleString('en-IN')}</td>
-      </tr>
-    `).join('');
-
-    const invoiceHtml = `
+    printWindow.document.open();
+    printWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
           <meta charset="utf-8" />
-          <title>Supplement Invoice - ${receipt.invoice_number}</title>
+          <title>Invoice_${receipt.invoice_number}</title>
           <style>
             @page {
               size: A4 portrait;
@@ -167,288 +161,22 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
               color: #0f172a;
               background: #ffffff;
-              padding: 20px;
-              font-size: 13px;
-              line-height: 1.4;
-            }
-            .invoice-box {
-              max-width: 650px;
-              margin: 0 auto;
-              border: 2px solid #0f172a;
-              border-radius: 12px;
               padding: 24px;
-            }
-            .header {
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              border-bottom: 2px solid #e2e8f0;
-              padding-bottom: 16px;
-              margin-bottom: 18px;
-            }
-            .header-brand {
-              display: flex;
-              align-items: center;
-              gap: 12px;
-            }
-            .brand-logo {
-              width: 56px;
-              height: 56px;
-              border-radius: 50%;
-              object-fit: cover;
-              border: 2px solid #ea580c;
-            }
-            .brand-title {
-              font-size: 20px;
-              font-weight: 900;
-              color: #0f172a;
-              text-transform: uppercase;
-              letter-spacing: -0.5px;
-            }
-            .brand-tagline {
-              font-size: 11px;
-              font-weight: 700;
-              color: #ea580c;
-            }
-            .brand-address {
-              font-size: 10px;
-              color: #64748b;
-              margin-top: 3px;
-              line-height: 1.3;
-            }
-            .invoice-badge {
-              text-align: right;
-              background: #fff7ed;
-              border: 1px solid #fed7aa;
-              padding: 10px 14px;
-              border-radius: 8px;
-            }
-            .badge-title {
-              font-size: 11px;
-              font-weight: 800;
-              color: #c2410c;
-              text-transform: uppercase;
-            }
-            .badge-num {
               font-size: 13px;
-              font-weight: 900;
-              font-family: monospace;
-              color: #0f172a;
-              margin-top: 2px;
+              line-height: 1.5;
             }
-            .badge-date {
-              font-size: 10px;
-              color: #64748b;
-              margin-top: 2px;
-            }
-            .customer-bar {
-              display: flex;
-              justify-content: space-between;
-              background: #f8fafc;
-              border: 1px solid #e2e8f0;
-              border-radius: 8px;
-              padding: 10px 14px;
-              margin-bottom: 16px;
-              font-size: 12px;
-            }
-            .items-table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 16px;
-            }
-            .items-table th {
-              background: #0f172a;
-              color: #ffffff;
-              font-size: 11px;
-              font-weight: 800;
-              text-transform: uppercase;
-              padding: 8px 10px;
-              letter-spacing: 0.5px;
-            }
-            .totals-container {
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-start;
-              border-top: 2px solid #0f172a;
-              padding-top: 14px;
-              margin-bottom: 18px;
-            }
-            .payment-info {
-              font-size: 11px;
-              color: #334155;
-            }
-            .calc-box {
-              width: 220px;
-              text-align: right;
-            }
-            .calc-row {
-              display: flex;
-              justify-content: space-between;
-              margin-bottom: 4px;
-              font-size: 12px;
-            }
-            .calc-row.final {
-              font-size: 15px;
-              font-weight: 900;
-              color: #15803d;
-              background: #f0fdf4;
-              border: 1px solid #bbf7d0;
-              padding: 6px 8px;
-              border-radius: 6px;
-              margin-top: 6px;
-            }
-            .footer {
-              border-top: 1px dashed #cbd5e1;
-              padding-top: 12px;
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-end;
-              font-size: 10px;
-              color: #64748b;
-            }
-            .signature {
-              text-align: right;
-              display: flex;
-              flex-direction: column;
-              align-items: flex-end;
-            }
-            .stamp-seal-container {
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              margin-bottom: 4px;
-              transform: rotate(-6deg);
-            }
-            .stamp-seal {
-              width: 64px;
-              height: 64px;
-              border-radius: 50%;
-              border: 2px solid #1e3a8a;
-              padding: 2px;
-              background: #ffffff;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              box-shadow: 0 0 0 2px rgba(30, 58, 138, 0.2);
-            }
-            .stamp-seal img {
-              width: 100%;
-              height: 100%;
-              border-radius: 50%;
-              object-fit: cover;
-            }
-            .stamp-tag {
-              font-size: 7.5px;
-              font-weight: 800;
-              color: #1e3a8a;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-              margin-top: 2px;
-              border: 1px solid #1e3a8a;
-              padding: 1px 5px;
-              border-radius: 4px;
-              background: #eff6ff;
-            }
-            .sig-line {
-              width: 120px;
-              border-bottom: 1px solid #0f172a;
-              margin: 4px 0 3px auto;
+            @media print {
+              body {
+                padding: 0;
+              }
             }
           </style>
         </head>
         <body>
-          <div class="invoice-box">
-            <div class="header">
-              <div class="header-brand">
-                <img src="/logo.png" class="brand-logo" alt="Logo" />
-                <div>
-                  <div class="brand-title">${gymName}</div>
-                  <div class="brand-tagline">${gymTagline}</div>
-                  <div class="brand-address">
-                    ${gymAddress}<br />
-                    Phone: ${gymPhone} | UPI: ${gymUpi}
-                  </div>
-                </div>
-              </div>
-              <div class="invoice-badge">
-                <div class="badge-title">Supplement Invoice</div>
-                <div class="badge-num">${receipt.invoice_number}</div>
-                <div class="badge-date">${receipt.sale_date}</div>
-              </div>
-            </div>
-
-            <div class="customer-bar">
-              <div>
-                <strong>Customer:</strong> ${receipt.customer_name}
-                ${receipt.member_id ? ` <span style="color:#ea580c; font-weight:700;">(ID: ${receipt.member_id})</span>` : ''}
-              </div>
-              <div>
-                <strong>Phone:</strong> ${receipt.customer_phone || 'N/A'}
-              </div>
-            </div>
-
-            <table class="items-table">
-              <thead>
-                <tr>
-                  <th style="text-align: left;">Product Description</th>
-                  <th style="text-align: center; width: 60px;">Qty</th>
-                  <th style="text-align: right; width: 100px;">Rate</th>
-                  <th style="text-align: right; width: 110px;">Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${itemsRowsHtml}
-              </tbody>
-            </table>
-
-            <div class="totals-container">
-              <div class="payment-info">
-                <strong>Payment Mode:</strong> ${paymentMethod}<br />
-                <strong>Cashier / Sold By:</strong> ${receipt.sold_by}<br />
-                ${receipt.notes ? `<strong>Notes:</strong> ${receipt.notes}` : ''}
-              </div>
-
-              <div class="calc-box">
-                <div class="calc-row">
-                  <span style="color:#64748b;">Gross Amount:</span>
-                  <span>₹${receipt.subtotal.toLocaleString('en-IN')}</span>
-                </div>
-                ${receipt.discount > 0 ? `
-                  <div class="calc-row" style="color: #ea580c;">
-                    <span>Discount:</span>
-                    <span>- ₹${receipt.discount.toLocaleString('en-IN')}</span>
-                  </div>
-                ` : ''}
-                <div class="calc-row final">
-                  <span>Total Paid:</span>
-                  <span>₹${receipt.final_amount.toLocaleString('en-IN')}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="footer">
-              <div>
-                • Authentic fitness supplements guaranteed by Morya Fitness.<br />
-                • Please keep this invoice for your nutritional records.
-              </div>
-              <div class="signature">
-                <div class="stamp-seal-container">
-                  <div class="stamp-seal">
-                    <img src="/logo.png" alt="Morya Fitness Seal" />
-                  </div>
-                  <div class="stamp-tag">OFFICIAL SEAL • SINNAR</div>
-                </div>
-                <div class="sig-line"></div>
-                <strong>Authorized Signatory</strong>
-              </div>
-            </div>
-          </div>
+          ${el.outerHTML}
         </body>
       </html>
-    `;
-
-    printWindow.document.open();
-    printWindow.document.write(invoiceHtml);
+    `);
     printWindow.document.close();
     printWindow.focus();
     setTimeout(() => {
@@ -458,7 +186,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-      <div className="relative w-full max-w-xl bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative w-full max-w-2xl bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         {/* Header Bar */}
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
           <div className="flex items-center gap-2 text-slate-800">
@@ -475,142 +203,430 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
 
         {/* Receipt Scroll Area */}
         <div className="p-4 sm:p-6 max-h-[75vh] overflow-y-auto bg-slate-50/50">
+          {/* On-Screen Invoice Preview Card: 100% Identical Replica for Screen, Print & PDF */}
           <div
             id="printable-supplement-invoice"
-            className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm text-slate-800 space-y-5 text-xs max-w-xl mx-auto"
+            style={{
+              maxWidth: '650px',
+              margin: '0 auto',
+              border: '2px solid #0f172a',
+              borderRadius: '12px',
+              padding: '28px',
+              background: '#ffffff',
+              color: '#0f172a',
+              fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+              fontSize: '13px',
+              lineHeight: '1.5',
+              boxSizing: 'border-box',
+            }}
           >
-            {/* Gym Branding */}
-            <div className="flex items-center justify-between gap-4 pb-4 border-b border-slate-100">
-            <div className="flex items-center gap-3">
-              <img
-                src="/logo.png"
-                alt="Logo"
-                className="w-12 h-12 rounded-full object-cover border-2 border-orange-500 shadow-sm flex-shrink-0"
-              />
+            {/* Header */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              borderBottom: '2px solid #e2e8f0',
+              paddingBottom: '18px',
+              marginBottom: '20px',
+              gap: '14px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <img
+                  src="/logo.png"
+                  alt="Logo"
+                  style={{
+                    width: '56px',
+                    height: '56px',
+                    borderRadius: '50%',
+                    objectFit: 'cover',
+                    border: '2px solid #ea580c',
+                    flexShrink: 0,
+                  }}
+                />
+                <div>
+                  <div style={{
+                    fontSize: '22px',
+                    fontWeight: 900,
+                    color: '#0f172a',
+                    letterSpacing: '-0.5px',
+                    textTransform: 'uppercase',
+                  }}>
+                    {gymName.toUpperCase()}
+                  </div>
+                  <div style={{
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    color: '#ea580c',
+                    marginTop: '2px',
+                  }}>
+                    {gymTagline}
+                  </div>
+                  <div style={{
+                    fontSize: '11px',
+                    color: '#64748b',
+                    marginTop: '4px',
+                    lineHeight: '1.4',
+                  }}>
+                    {gymAddress}<br />
+                    Phone: {gymPhone} | UPI: {gymUpi}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{
+                textAlign: 'right',
+                background: '#fff7ed',
+                border: '1px solid #ffedd5',
+                padding: '10px 14px',
+                borderRadius: '8px',
+                flexShrink: 0,
+              }}>
+                <div style={{
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  color: '#c2410c',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}>
+                  OFFICIAL RETAIL INVOICE
+                </div>
+                <div style={{
+                  fontFamily: 'monospace',
+                  fontSize: '14px',
+                  fontWeight: 800,
+                  color: '#0f172a',
+                  marginTop: '2px',
+                }}>
+                  {receipt.invoice_number}
+                </div>
+                <div style={{
+                  fontSize: '11px',
+                  color: '#64748b',
+                  marginTop: '2px',
+                }}>
+                  Date: {receipt.sale_date || receipt.date}
+                </div>
+              </div>
+            </div>
+
+            {/* Billed To & Payment Details */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: '16px',
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '8px',
+              padding: '14px',
+              marginBottom: '20px',
+            }}>
               <div>
-                <h2 className="text-base font-black text-slate-900 font-heading leading-tight">
-                  {gymName}
-                </h2>
-                <p className="text-[11px] text-orange-600 font-semibold">{gymTagline}</p>
-                <p className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
-                  <MapPin className="w-3 h-3 text-slate-400" />
-                  {gymAddress}
-                </p>
+                <div style={{
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  color: '#64748b',
+                  letterSpacing: '0.5px',
+                  marginBottom: '4px',
+                }}>
+                  BILLED TO
+                </div>
+                <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
+                  {receipt.customer_name}
+                </div>
+                {receipt.member_id && (
+                  <div style={{ fontSize: '12px', color: '#334155', marginTop: '2px' }}>
+                    Member ID: <strong style={{ color: '#0f172a' }}>{receipt.member_id}</strong>
+                  </div>
+                )}
+                <div style={{ fontSize: '12px', color: '#334155', marginTop: '2px' }}>
+                  Mobile: +91 {receipt.customer_phone || '—'}
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'right' }}>
+                <div style={{
+                  fontSize: '10px',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  color: '#64748b',
+                  letterSpacing: '0.5px',
+                  marginBottom: '4px',
+                }}>
+                  PAYMENT DETAILS
+                </div>
+                <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
+                  {paymentMethod}
+                </div>
+                <div style={{ fontSize: '12px', color: '#334155', marginTop: '2px' }}>
+                  Cashier: {receipt.sold_by || 'Gokul Gugale'}
+                </div>
+                {receipt.notes && (
+                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                    Note: {receipt.notes}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="text-right bg-orange-50/80 p-2.5 rounded-xl border border-orange-100">
-              <span className="text-[9px] font-bold uppercase text-orange-700 tracking-wider block">
-                Invoice No
-              </span>
-              <span className="font-mono font-bold text-xs text-slate-900 block mt-0.5">
-                {receipt.invoice_number}
-              </span>
-              <span className="text-[10px] text-slate-500 block mt-0.5">
-                {receipt.date}
-              </span>
-            </div>
-          </div>
-
-          {/* Customer info */}
-          <div className="grid grid-cols-2 gap-3 p-3 rounded-xl bg-slate-50 border border-slate-100">
-            <div>
-              <span className="text-[10px] text-slate-400 font-bold uppercase">Customer</span>
-              <span className="font-bold text-slate-900 block mt-0.5">{receipt.customer_name}</span>
-              {receipt.member_id && (
-                <span className="text-[10px] text-orange-600 font-semibold block">
-                  Member ID: {receipt.member_id}
-                </span>
-              )}
-            </div>
-            <div className="text-right">
-              <span className="text-[10px] text-slate-400 font-bold uppercase">Phone & Payment</span>
-              <span className="font-semibold text-slate-800 block mt-0.5">{receipt.customer_phone || 'N/A'}</span>
-              <span className="text-[10px] text-emerald-700 font-bold block">
-                Paid via {receipt.payment_method}
-              </span>
-            </div>
-          </div>
-
-          {/* Items table */}
-          <div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">
-              Purchased Items
-            </span>
-            <div className="border border-slate-200 rounded-xl overflow-hidden">
-              <table className="w-full text-left">
-                <thead className="bg-slate-100 text-[10px] uppercase font-bold text-slate-600">
-                  <tr>
-                    <th className="p-2.5">Product</th>
-                    <th className="p-2.5 text-center">Qty</th>
-                    <th className="p-2.5 text-right">Price</th>
-                    <th className="p-2.5 text-right">Subtotal</th>
+            {/* Itemized Products Table */}
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
+              <thead>
+                <tr>
+                  <th style={{
+                    background: '#f1f5f9',
+                    color: '#475569',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    padding: '10px 12px',
+                    textAlign: 'left',
+                    borderBottom: '1px solid #cbd5e1',
+                  }}>
+                    ITEM DESCRIPTION
+                  </th>
+                  <th style={{
+                    background: '#f1f5f9',
+                    color: '#475569',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    padding: '10px 12px',
+                    textAlign: 'center',
+                    borderBottom: '1px solid #cbd5e1',
+                    width: '60px',
+                  }}>
+                    QTY
+                  </th>
+                  <th style={{
+                    background: '#f1f5f9',
+                    color: '#475569',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    padding: '10px 12px',
+                    textAlign: 'right',
+                    borderBottom: '1px solid #cbd5e1',
+                    width: '100px',
+                  }}>
+                    UNIT PRICE
+                  </th>
+                  <th style={{
+                    background: '#f1f5f9',
+                    color: '#475569',
+                    fontSize: '11px',
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    padding: '10px 12px',
+                    textAlign: 'right',
+                    borderBottom: '1px solid #cbd5e1',
+                    width: '110px',
+                  }}>
+                    TOTAL (INR)
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {receipt.items.map((item, i) => (
+                  <tr key={i}>
+                    <td style={{
+                      padding: '12px',
+                      fontSize: '12px',
+                      borderBottom: '1px solid #f1f5f9',
+                      color: '#1e293b',
+                    }}>
+                      <strong style={{ color: '#0f172a' }}>{item.name}</strong>
+                      {item.brand && (
+                        <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                          Brand: {item.brand}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{
+                      padding: '12px',
+                      fontSize: '12px',
+                      borderBottom: '1px solid #f1f5f9',
+                      color: '#1e293b',
+                      textAlign: 'center',
+                      fontWeight: 700,
+                    }}>
+                      {item.quantity}
+                    </td>
+                    <td style={{
+                      padding: '12px',
+                      fontSize: '12px',
+                      borderBottom: '1px solid #f1f5f9',
+                      color: '#1e293b',
+                      textAlign: 'right',
+                    }}>
+                      ₹{item.unit_price.toLocaleString('en-IN')}
+                    </td>
+                    <td style={{
+                      padding: '12px',
+                      fontSize: '12px',
+                      borderBottom: '1px solid #f1f5f9',
+                      color: '#1e293b',
+                      textAlign: 'right',
+                      fontWeight: 'bold',
+                    }}>
+                      ₹{item.subtotal.toLocaleString('en-IN')}
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {receipt.items.map((item, i) => (
-                    <tr key={i} className="hover:bg-slate-50/80">
-                      <td className="p-2.5 font-medium text-slate-900">
-                        {item.name}
-                        {item.brand && <span className="block text-[10px] text-slate-400">{item.brand}</span>}
-                      </td>
-                      <td className="p-2.5 text-center font-bold">{item.quantity}</td>
-                      <td className="p-2.5 text-right">₹{item.unit_price.toLocaleString('en-IN')}</td>
-                      <td className="p-2.5 text-right font-bold text-slate-900">₹{item.subtotal.toLocaleString('en-IN')}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                ))}
+              </tbody>
+            </table>
 
-          {/* Financial Breakdown */}
-          <div className="flex justify-between items-center p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
-            <div>
-              <span className="text-[10px] text-slate-400 font-bold block">Cashier</span>
-              <span className="font-semibold text-slate-800 text-xs">{receipt.sold_by}</span>
-            </div>
-
-            <div className="text-right space-y-0.5">
-              <div className="text-[11px] text-slate-500">
-                Gross: ₹{receipt.subtotal.toLocaleString('en-IN')}
-              </div>
-              {receipt.discount > 0 && (
-                <div className="text-[11px] text-orange-600 font-semibold">
-                  Discount: - ₹{receipt.discount.toLocaleString('en-IN')}
+            {/* Financial Calculation Breakdown */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
+              <div style={{ width: '300px' }}>
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '12px',
+                  padding: '4px 0',
+                  color: '#475569',
+                }}>
+                  <span>Subtotal:</span>
+                  <span>₹{receipt.subtotal.toLocaleString('en-IN')}</span>
                 </div>
-              )}
-              <div className="text-base font-black text-emerald-700 font-heading">
-                Total: ₹{receipt.final_amount.toLocaleString('en-IN')}
-              </div>
-            </div>
-          </div>
 
-          {/* Store Terms & Official Seal */}
-          <div className="pt-5 border-t border-slate-200 grid grid-cols-2 items-end gap-4 text-[10px] text-slate-500">
-            <div className="space-y-1">
-              <p className="font-bold text-slate-700">Store Terms & Policies:</p>
-              <p>1. All supplement products are 100% genuine & authentic.</p>
-              <p>2. Opened or unsealed products are non-returnable.</p>
-              <p>3. Official store tax invoice issued by {gymName}, Sinnar.</p>
-            </div>
+                {receipt.discount > 0 && (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: '12px',
+                    padding: '4px 0',
+                    color: '#15803d',
+                    fontWeight: 600,
+                  }}>
+                    <span>Discount:</span>
+                    <span>-₹{receipt.discount.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
 
-            <div className="text-right space-y-2 flex flex-col items-end">
-              <div className="inline-flex flex-col items-center -rotate-6 transition-transform hover:rotate-0">
-                <div className="w-14 h-14 rounded-full border-2 border-blue-900 p-0.5 bg-white shadow-sm ring-2 ring-blue-100 flex items-center justify-center overflow-hidden">
-                  <img src="/logo.png" alt="Seal" className="w-full h-full object-cover rounded-full" />
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '12px',
+                  padding: '6px 0 4px',
+                  color: '#0f172a',
+                  fontWeight: 800,
+                  borderTop: '1px solid #e2e8f0',
+                  marginTop: '4px',
+                }}>
+                  <span>Net Payable:</span>
+                  <span>₹{receipt.final_amount.toLocaleString('en-IN')}</span>
                 </div>
-                <span className="text-[8px] font-black tracking-wider text-blue-900 uppercase mt-1 px-2 py-0.5 bg-blue-50 border border-blue-300 rounded">
-                  OFFICIAL STORE SEAL • SINNAR
-                </span>
+
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: '14px',
+                  fontWeight: 900,
+                  color: '#15803d',
+                  background: '#f0fdf4',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid #bbf7d0',
+                  marginTop: '6px',
+                }}>
+                  <span>Amount Paid (INR):</span>
+                  <span>₹{receipt.final_amount.toLocaleString('en-IN')}</span>
+                </div>
+
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '11px',
+                  color: '#15803d',
+                  fontWeight: 'bold',
+                  padding: '4px 0',
+                  marginTop: '4px',
+                }}>
+                  <span>Payment Status:</span>
+                  <span>✓ Paid in Full</span>
+                </div>
               </div>
-              <div className="w-28 border-b border-slate-300" />
-              <p className="font-bold text-slate-800 text-xs">Authorized Signatory</p>
-              <p className="text-[9px] text-slate-500">{gymName}, Sinnar</p>
+            </div>
+
+            {/* Terms & Authorized Stamp */}
+            <div style={{
+              borderTop: '1px dashed #cbd5e1',
+              paddingTop: '16px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'flex-end',
+            }}>
+              <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.4', maxWidth: '60%' }}>
+                <strong style={{ color: '#475569', display: 'block', marginBottom: '2px' }}>
+                  Store Terms & Policies:
+                </strong>
+                1. Authentic fitness supplements guaranteed by {gymName}.<br />
+                2. Opened or unsealed products are non-returnable.<br />
+                3. Official computer-generated retail invoice for Morya Fitness, Sinnar.
+              </div>
+
+              <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  marginBottom: '6px',
+                  transform: 'rotate(-6deg)',
+                }}>
+                  <div style={{
+                    width: '72px',
+                    height: '72px',
+                    borderRadius: '50%',
+                    border: '2.5px solid #1e3a8a',
+                    padding: '2px',
+                    background: '#ffffff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 0 0 2px rgba(30, 58, 138, 0.2)',
+                    overflow: 'hidden',
+                  }}>
+                    <img
+                      src="/logo.png"
+                      alt="Morya Fitness Seal"
+                      style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+                    />
+                  </div>
+                  <div style={{
+                    fontSize: '8px',
+                    fontWeight: 800,
+                    color: '#1e3a8a',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    marginTop: '3px',
+                    border: '1px solid #1e3a8a',
+                    padding: '1px 6px',
+                    borderRadius: '4px',
+                    background: '#eff6ff',
+                  }}>
+                    OFFICIAL SEAL • SINNAR
+                  </div>
+                </div>
+
+                <div style={{
+                  width: '140px',
+                  borderBottom: '1px solid #0f172a',
+                  marginTop: '4px',
+                  marginBottom: '4px',
+                  marginLeft: 'auto',
+                }} />
+                <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f172a', textTransform: 'uppercase' }}>
+                  AUTHORIZED SIGNATURE & SEAL
+                </div>
+                <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px' }}>
+                  Morya Fitness, Sinnar
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
         {/* Notice Message Banner */}
         {noticeMessage && (

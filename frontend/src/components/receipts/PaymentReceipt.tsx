@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Printer, MapPin, CheckCircle2,
+  Printer, CheckCircle2,
   MessageSquare, RefreshCw
 } from 'lucide-react';
 import { api } from '../../services/api';
@@ -23,14 +23,14 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
   const memberPhone = receipt.member?.phone || '—';
 
   // Safe Gym Properties
-  const gymName = receipt.gym?.name || 'Morya Fitness';
+  const gymName = (receipt.gym?.name || 'Morya Fitness').toUpperCase();
   const gymTagline = receipt.gym?.tagline || 'Premium Gym & Fitness Center';
   const gymAddress = receipt.gym?.address || 'Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103';
   const gymPhone = receipt.gym?.phone || '+91 7219188002';
-  const gymUpi = receipt.gym?.upi_id || 'moryafitness@okhdfcbank';
+  const gymUpi = receipt.gym?.upi_id || '7219188002@ybl';
 
   // Safe Payment & Plan Properties
-  const receiptNo = receipt.receipt_number || 'MF-REC-001';
+  const receiptNo = receipt.receipt_number || 'MF-REC-2026-0001';
   const paymentDate = receipt.payment_date || receipt.date || receipt.created_at || new Date().toISOString();
   const formattedDate = new Date(paymentDate).toLocaleDateString('en-IN', {
     day: '2-digit',
@@ -38,8 +38,11 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
     year: 'numeric',
   });
 
-  const planName = receipt.plan?.name || 'Gym Membership';
+  const planName = receipt.plan?.name || 'One Month';
   const durationDays = receipt.plan?.duration_days ?? 30;
+  const startDate = receipt.plan?.start_date || receipt.membership?.start_date || receipt.start_date || '';
+  const endDate = receipt.plan?.end_date || receipt.membership?.end_date || receipt.end_date || '';
+  const validityRange = startDate && endDate ? `${startDate} to ${endDate}` : '';
 
   // Strict UPI or Cash formatting (no Paytm/PhonePe/GPay or extra text)
   const formatPaymentMethod = (method: any): 'UPI' | 'Cash' => {
@@ -56,7 +59,7 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
   );
 
   const transactionRef = receipt.transaction_ref || receipt.payment?.transaction_ref || '';
-  const cashierName = receipt.received_by || receipt.payment?.received_by || 'Admin';
+  const cashierName = receipt.received_by || receipt.payment?.received_by || 'Gokul Gugale';
 
   // Safe Financial Computations (No NaN guaranteed)
   const planBasePrice = Number(
@@ -105,23 +108,25 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
           ? `91${cleanPhone}`
           : cleanPhone;
 
-      const message = `🏋️‍♂️ *${gymName.toUpperCase()} — OFFICIAL FEE RECEIPT*\n` +
+      const message = `🏋️‍♂️ *${gymName} — OFFICIAL FEE RECEIPT*\n` +
         `━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `Dear *${memberName}*,\n\n` +
-        `Thank you for your payment at *${gymName}*! Here are your official fee receipt details:\n\n` +
+        `Thank you for your payment at *${receipt.gym?.name || 'Morya Fitness'}*! Here are your official fee receipt details:\n\n` +
         `📄 *Receipt No:* ${receiptNo}\n` +
         `📅 *Date:* ${formattedDate}\n` +
         `💪 *Plan:* ${planName} (${durationDays} Days)\n` +
+        (validityRange ? `🗓️ *Validity:* ${validityRange}\n` : '') +
         `💳 *Payment Mode:* ${paymentMethod}\n` +
         (transactionRef ? `🔖 *Ref / UTR:* ${transactionRef}\n` : '') +
+        `👤 *Cashier:* ${cashierName}\n` +
         `💰 *Amount Paid:* ₹${amountPaid.toLocaleString('en-IN')}\n` +
         (remainingDues > 0
           ? `⚠️ *Balance Dues Remaining:* ₹${remainingDues.toLocaleString('en-IN')}\n`
-          : `✅ *Payment Status:* Settled in Full\n`) +
+          : `✅ *Payment Status:* Paid in Full\n`) +
         `━━━━━━━━━━━━━━━━━━━━━━━\n` +
         `📍 *Address:* ${gymAddress}\n` +
-        `📞 *Helpdesk:* ${gymPhone}\n\n` +
-        `_Welcome to ${gymName}! Stay consistent & achieve your fitness goals!_ 🏆`;
+        `📞 *Helpdesk:* ${gymPhone} | UPI: ${gymUpi}\n\n` +
+        `_Welcome to ${receipt.gym?.name || 'Morya Fitness'}! Stay consistent & achieve your fitness goals!_ 🏆`;
 
       const fileName = `Receipt_${receiptNo}.pdf`;
       let pdfFile: File | null = null;
@@ -177,7 +182,7 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
         }
       }
 
-      // 3. Open WhatsApp chat directly with prefilled message containing direct PDF link
+      // 3. Open WhatsApp chat directly with prefilled message
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       const encodedText = encodeURIComponent(message);
       const whatsappUrl = isMobile
@@ -191,13 +196,19 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
   };
 
   const handlePrint = () => {
+    const el = document.getElementById('printable-receipt');
+    if (!el) {
+      window.print();
+      return;
+    }
     const printWindow = window.open('', '_blank', 'width=800,height=900');
     if (!printWindow) {
       window.print();
       return;
     }
 
-    const htmlContent = `
+    printWindow.document.open();
+    printWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
@@ -221,349 +232,18 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
               font-size: 13px;
               line-height: 1.5;
             }
-            .receipt-container {
-              max-width: 650px;
-              margin: 0 auto;
-              border: 2px solid #0f172a;
-              border-radius: 12px;
-              padding: 28px;
-            }
-            .header {
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-start;
-              border-bottom: 2px solid #e2e8f0;
-              padding-bottom: 18px;
-              margin-bottom: 20px;
-            }
-            .brand-title {
-              font-size: 22px;
-              font-weight: 900;
-              color: #0f172a;
-              letter-spacing: -0.5px;
-              text-transform: uppercase;
-            }
-            .brand-tagline {
-              font-size: 11px;
-              font-weight: 700;
-              color: #ea580c;
-              margin-top: 2px;
-            }
-            .brand-contact {
-              font-size: 11px;
-              color: #64748b;
-              margin-top: 4px;
-              line-height: 1.4;
-            }
-            .receipt-badge {
-              text-align: right;
-              background: #fff7ed;
-              border: 1px solid #ffedd5;
-              padding: 10px 14px;
-              border-radius: 8px;
-            }
-            .badge-title {
-              font-size: 10px;
-              font-weight: 800;
-              color: #c2410c;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-            }
-            .badge-number {
-              font-family: monospace;
-              font-size: 14px;
-              font-weight: 800;
-              color: #0f172a;
-              margin-top: 2px;
-            }
-            .badge-date {
-              font-size: 11px;
-              color: #64748b;
-              margin-top: 2px;
-            }
-            .info-grid {
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 16px;
-              background: #f8fafc;
-              border: 1px solid #e2e8f0;
-              border-radius: 8px;
-              padding: 14px;
-              margin-bottom: 20px;
-            }
-            .info-col h4 {
-              font-size: 10px;
-              font-weight: 800;
-              text-transform: uppercase;
-              color: #64748b;
-              letter-spacing: 0.5px;
-              margin-bottom: 4px;
-            }
-            .info-val-strong {
-              font-size: 13px;
-              font-weight: 800;
-              color: #0f172a;
-            }
-            .info-val {
-              font-size: 12px;
-              color: #334155;
-              margin-top: 2px;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-bottom: 20px;
-            }
-            th {
-              background: #f1f5f9;
-              color: #475569;
-              font-size: 11px;
-              font-weight: 800;
-              text-transform: uppercase;
-              padding: 10px 12px;
-              text-align: left;
-              border-bottom: 1px solid #cbd5e1;
-            }
-            th.text-right, td.text-right {
-              text-align: right;
-            }
-            td {
-              padding: 12px;
-              font-size: 12px;
-              border-bottom: 1px solid #f1f5f9;
-              color: #1e293b;
-            }
-            .calc-wrap {
-              display: flex;
-              justify-content: flex-end;
-              margin-bottom: 20px;
-            }
-            .calc-table {
-              width: 300px;
-            }
-            .calc-row {
-              display: flex;
-              justify-content: space-between;
-              font-size: 12px;
-              padding: 4px 0;
-              color: #475569;
-            }
-            .calc-row.strong {
-              font-weight: 800;
-              color: #0f172a;
-              border-top: 1px solid #e2e8f0;
-              padding-top: 6px;
-              margin-top: 4px;
-            }
-            .calc-row.paid {
-              font-weight: 900;
-              font-size: 14px;
-              color: #15803d;
-              background: #f0fdf4;
-              padding: 6px 8px;
-              border-radius: 6px;
-              border: 1px solid #bbf7d0;
-              margin-top: 6px;
-            }
-            .calc-row.due {
-              font-weight: 800;
-              font-size: 12px;
-              color: #b91c1c;
-              background: #fef2f2;
-              padding: 4px 8px;
-              border-radius: 6px;
-              border: 1px solid #fecaca;
-              margin-top: 6px;
-            }
-            .footer {
-              border-top: 1px dashed #cbd5e1;
-              padding-top: 16px;
-              display: flex;
-              justify-content: space-between;
-              align-items: flex-end;
-            }
-            .terms {
-              font-size: 10px;
-              color: #64748b;
-              line-height: 1.4;
-              max-width: 60%;
-            }
-            .signature {
-              text-align: right;
-              display: flex;
-              flex-direction: column;
-              align-items: flex-end;
-            }
-            .stamp-seal-container {
-              display: flex;
-              flex-direction: column;
-              align-items: center;
-              margin-bottom: 6px;
-              transform: rotate(-6deg);
-            }
-            .stamp-seal {
-              width: 72px;
-              height: 72px;
-              border-radius: 50%;
-              border: 2.5px solid #1e3a8a;
-              padding: 2px;
-              background: #ffffff;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              box-shadow: 0 0 0 2px rgba(30, 58, 138, 0.2);
-            }
-            .stamp-seal img {
-              width: 100%;
-              height: 100%;
-              border-radius: 50%;
-              object-fit: cover;
-            }
-            .stamp-tag {
-              font-size: 8px;
-              font-weight: 800;
-              color: #1e3a8a;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-              margin-top: 3px;
-              border: 1px solid #1e3a8a;
-              padding: 1px 6px;
-              border-radius: 4px;
-              background: #eff6ff;
-            }
-            .sig-line {
-              width: 140px;
-              border-bottom: 1px solid #0f172a;
-              margin-top: 4px;
-              margin-bottom: 4px;
-              margin-left: auto;
-            }
-            .sig-text {
-              font-size: 10px;
-              font-weight: 800;
-              color: #0f172a;
-              text-transform: uppercase;
+            @media print {
+              body {
+                padding: 0;
+              }
             }
           </style>
         </head>
         <body>
-          <div class="receipt-container">
-            <div class="header">
-              <div style="display: flex; align-items: center; gap: 14px;">
-                <img src="/logo.png" style="width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 2px solid #ea580c;" />
-                <div>
-                  <div class="brand-title">${gymName}</div>
-                  <div class="brand-tagline">${gymTagline}</div>
-                  <div class="brand-contact">
-                    ${gymAddress}<br>
-                    Phone: ${gymPhone} | UPI: ${gymUpi}
-                  </div>
-                </div>
-              </div>
-              <div class="receipt-badge">
-                <div class="badge-title">Official Fee Receipt</div>
-                <div class="badge-number">${receiptNo}</div>
-                <div class="badge-date">Date: ${formattedDate}</div>
-              </div>
-            </div>
-
-            <div class="info-grid">
-              <div class="info-col">
-                <h4>Received From</h4>
-                <div class="info-val-strong">${memberName}</div>
-                <div class="info-val">Member ID: <strong>${memberId}</strong></div>
-                <div class="info-val">Mobile: +91 ${memberPhone}</div>
-              </div>
-              <div class="info-col" style="text-align: right;">
-                <h4>Payment Details</h4>
-                <div class="info-val-strong">${paymentMethod}</div>
-                ${transactionRef ? `<div class="info-val">Ref/UTR: ${transactionRef}</div>` : ''}
-                <div class="info-val">Cashier: ${cashierName}</div>
-              </div>
-            </div>
-
-            <table>
-              <thead>
-                <tr>
-                  <th>Membership Particulars</th>
-                  <th>Validity Period</th>
-                  <th class="text-right">Rate (INR)</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>
-                    <strong>${planName}</strong><br>
-                    <span style="font-size: 11px; color: #64748b;">Full Gym & Equipment Access</span>
-                  </td>
-                  <td>
-                    ${durationDays} Days<br>
-                    <span style="font-size: 10px; color: #64748b;">
-                      ${receipt.membership?.start_date ? `${receipt.membership.start_date} to ${receipt.membership.end_date}` : ''}
-                    </span>
-                  </td>
-                  <td class="text-right font-bold">₹${planBasePrice.toLocaleString('en-IN')}</td>
-                </tr>
-              </tbody>
-            </table>
-
-            <div class="calc-wrap">
-              <div class="calc-table">
-                <div class="calc-row">
-                  <span>Plan Base Fee:</span>
-                  <span>₹${planBasePrice.toLocaleString('en-IN')}</span>
-                </div>
-                ${discountApplied > 0 ? `
-                <div class="calc-row" style="color: #15803d;">
-                  <span>Discount Applied:</span>
-                  <span>-₹${discountApplied.toLocaleString('en-IN')}</span>
-                </div>` : ''}
-                <div class="calc-row strong">
-                  <span>Net Payable:</span>
-                  <span>₹${finalPayable.toLocaleString('en-IN')}</span>
-                </div>
-                <div class="calc-row paid">
-                  <span>Amount Paid (INR):</span>
-                  <span>₹${amountPaid.toLocaleString('en-IN')}</span>
-                </div>
-                ${remainingDues > 0 ? `
-                <div class="calc-row due">
-                  <span>Balance Due:</span>
-                  <span>₹${remainingDues.toLocaleString('en-IN')}</span>
-                </div>` : `
-                <div class="calc-row" style="color: #15803d; font-weight: bold; font-size: 11px; padding: 4px 0;">
-                  <span>Payment Status:</span>
-                  <span>✓ Paid in Full</span>
-                </div>`}
-              </div>
-            </div>
-
-            <div class="footer">
-              <div class="terms">
-                <strong>Terms & Conditions:</strong><br>
-                1. Fees once paid are non-refundable and non-transferable.<br>
-                2. Please maintain gym hygiene, discipline, and equipment care.<br>
-                3. Official computer-generated receipt for Morya Fitness, Sinnar.
-              </div>
-              <div class="signature">
-                <div class="stamp-seal-container">
-                  <div class="stamp-seal">
-                    <img src="/logo.png" alt="Morya Fitness Seal" />
-                  </div>
-                  <div class="stamp-tag">OFFICIAL SEAL • SINNAR</div>
-                </div>
-                <div class="sig-line"></div>
-                <div class="sig-text">Authorized Signature & Seal</div>
-                <div style="font-size: 9px; color: #64748b; margin-top: 2px;">Morya Fitness, Sinnar</div>
-              </div>
-            </div>
-          </div>
+          ${el.outerHTML}
         </body>
       </html>
-    `;
-
-    printWindow.document.open();
-    printWindow.document.write(htmlContent);
+    `);
     printWindow.document.close();
     printWindow.focus();
     setTimeout(() => {
@@ -573,166 +253,418 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
 
   return (
     <div className="space-y-6">
-      {/* On-Screen Receipt Preview Card */}
+      {/* On-Screen Receipt Preview Card: 100% Identical Replica for Screen, Print & PDF */}
       <div
         id="printable-receipt"
-        className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm text-slate-800 space-y-6 max-w-2xl mx-auto"
+        style={{
+          maxWidth: '650px',
+          margin: '0 auto',
+          border: '2px solid #0f172a',
+          borderRadius: '12px',
+          padding: '28px',
+          background: '#ffffff',
+          color: '#0f172a',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          fontSize: '13px',
+          lineHeight: '1.5',
+          boxSizing: 'border-box',
+        }}
       >
-        {/* Receipt Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pb-5 border-b border-slate-200 gap-4">
-          <div className="flex items-center gap-3">
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          borderBottom: '2px solid #e2e8f0',
+          paddingBottom: '18px',
+          marginBottom: '20px',
+          gap: '14px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             <img
               src="/logo.png"
               alt="Morya Fitness"
-              className="w-14 h-14 rounded-full object-cover border-2 border-orange-500 shadow-md flex-shrink-0"
+              style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                objectFit: 'cover',
+                border: '2px solid #ea580c',
+                flexShrink: 0,
+              }}
             />
             <div>
-              <h2 className="text-xl font-black text-slate-900 font-heading tracking-tight leading-tight">
+              <div style={{
+                fontSize: '22px',
+                fontWeight: 900,
+                color: '#0f172a',
+                letterSpacing: '-0.5px',
+                textTransform: 'uppercase',
+              }}>
                 {gymName}
-              </h2>
-              <p className="text-xs text-orange-600 font-semibold">{gymTagline}</p>
-              <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                <MapPin className="w-3 h-3 text-slate-400" />
-                {gymAddress}
-              </p>
+              </div>
+              <div style={{
+                fontSize: '11px',
+                fontWeight: 700,
+                color: '#ea580c',
+                marginTop: '2px',
+              }}>
+                {gymTagline}
+              </div>
+              <div style={{
+                fontSize: '11px',
+                color: '#64748b',
+                marginTop: '4px',
+                lineHeight: '1.4',
+              }}>
+                {gymAddress}<br />
+                Phone: {gymPhone} | UPI: {gymUpi}
+              </div>
             </div>
           </div>
 
-          <div className="text-left sm:text-right bg-orange-50/70 p-3 rounded-2xl border border-orange-100">
-            <span className="text-[10px] uppercase font-bold text-orange-700 tracking-wider block">
-              Official Fee Receipt
-            </span>
-            <span className="font-mono font-bold text-sm text-slate-900 block mt-0.5">
+          <div style={{
+            textAlign: 'right',
+            background: '#fff7ed',
+            border: '1px solid #ffedd5',
+            padding: '10px 14px',
+            borderRadius: '8px',
+            flexShrink: 0,
+          }}>
+            <div style={{
+              fontSize: '10px',
+              fontWeight: 800,
+              color: '#c2410c',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}>
+              OFFICIAL FEE RECEIPT
+            </div>
+            <div style={{
+              fontFamily: 'monospace',
+              fontSize: '14px',
+              fontWeight: 800,
+              color: '#0f172a',
+              marginTop: '2px',
+            }}>
               {receiptNo}
-            </span>
-            <span className="text-[11px] text-slate-500 block mt-0.5">
+            </div>
+            <div style={{
+              fontSize: '11px',
+              color: '#64748b',
+              marginTop: '2px',
+            }}>
               Date: {formattedDate}
-            </span>
+            </div>
           </div>
         </div>
 
         {/* Member Details & Received By Info */}
-        <div className="grid grid-cols-2 gap-4 text-xs bg-slate-50 p-4 rounded-2xl border border-slate-100">
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: '16px',
+          background: '#f8fafc',
+          border: '1px solid #e2e8f0',
+          borderRadius: '8px',
+          padding: '14px',
+          marginBottom: '20px',
+        }}>
           <div>
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
-              Member Details
-            </span>
-            <span className="font-bold text-slate-900 text-sm block mt-0.5">
+            <div style={{
+              fontSize: '10px',
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              color: '#64748b',
+              letterSpacing: '0.5px',
+              marginBottom: '4px',
+            }}>
+              RECEIVED FROM
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
               {memberName}
-            </span>
-            <span className="font-mono text-xs text-orange-600 font-semibold block">
-              ID: {memberId}
-            </span>
-            <span className="text-slate-600 text-xs block">Phone: +91 {memberPhone}</span>
+            </div>
+            <div style={{ fontSize: '12px', color: '#334155', marginTop: '2px' }}>
+              Member ID: <strong style={{ color: '#0f172a' }}>{memberId}</strong>
+            </div>
+            <div style={{ fontSize: '12px', color: '#334155', marginTop: '2px' }}>
+              Mobile: +91 {memberPhone}
+            </div>
           </div>
 
-          <div className="text-right">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
-              Payment Mode
-            </span>
-            <span className="font-bold text-slate-900 text-sm block mt-0.5">
+          <div style={{ textAlign: 'right' }}>
+            <div style={{
+              fontSize: '10px',
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              color: '#64748b',
+              letterSpacing: '0.5px',
+              marginBottom: '4px',
+            }}>
+              PAYMENT DETAILS
+            </div>
+            <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
               {paymentMethod}
-            </span>
+            </div>
             {transactionRef && (
-              <span className="text-slate-500 font-mono text-[11px] block truncate">
-                Ref: {transactionRef}
-              </span>
+              <div style={{ fontSize: '12px', color: '#334155', marginTop: '2px' }}>
+                Ref/UTR: {transactionRef}
+              </div>
             )}
-            <span className="text-[11px] text-slate-500 block mt-0.5">
+            <div style={{ fontSize: '12px', color: '#334155', marginTop: '2px' }}>
               Cashier: {cashierName}
-            </span>
+            </div>
           </div>
         </div>
 
-        {/* Itemized Fee Table */}
-        <div className="overflow-hidden rounded-xl border border-slate-200">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-slate-100/80 text-slate-600 font-bold text-[11px] uppercase tracking-wider border-b border-slate-200">
-                <th className="py-2.5 px-4">Membership Item</th>
-                <th className="py-2.5 px-4">Validity</th>
-                <th className="py-2.5 px-4 text-right">Amount (₹)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              <tr>
-                <td className="py-3 px-4">
-                  <span className="font-bold text-slate-900 block">{planName}</span>
-                  <span className="text-[11px] text-slate-500">General gym & equipment access</span>
-                </td>
-                <td className="py-3 px-4 font-medium text-slate-700">
-                  {durationDays} Days
-                </td>
-                <td className="py-3 px-4 text-right font-bold text-slate-900">
-                  ₹{planBasePrice.toLocaleString('en-IN')}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        {/* Itemized Table */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
+          <thead>
+            <tr>
+              <th style={{
+                background: '#f1f5f9',
+                color: '#475569',
+                fontSize: '11px',
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                padding: '10px 12px',
+                textAlign: 'left',
+                borderBottom: '1px solid #cbd5e1',
+              }}>
+                MEMBERSHIP PARTICULARS
+              </th>
+              <th style={{
+                background: '#f1f5f9',
+                color: '#475569',
+                fontSize: '11px',
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                padding: '10px 12px',
+                textAlign: 'left',
+                borderBottom: '1px solid #cbd5e1',
+              }}>
+                VALIDITY PERIOD
+              </th>
+              <th style={{
+                background: '#f1f5f9',
+                color: '#475569',
+                fontSize: '11px',
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                padding: '10px 12px',
+                textAlign: 'right',
+                borderBottom: '1px solid #cbd5e1',
+              }}>
+                RATE (INR)
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style={{
+                padding: '12px',
+                fontSize: '12px',
+                borderBottom: '1px solid #f1f5f9',
+                color: '#1e293b',
+              }}>
+                <strong style={{ color: '#0f172a' }}>{planName}</strong>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                  Full Gym & Equipment Access
+                </div>
+              </td>
+              <td style={{
+                padding: '12px',
+                fontSize: '12px',
+                borderBottom: '1px solid #f1f5f9',
+                color: '#1e293b',
+              }}>
+                <div>{durationDays} Days</div>
+                {validityRange && (
+                  <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+                    {validityRange}
+                  </div>
+                )}
+              </td>
+              <td style={{
+                padding: '12px',
+                fontSize: '12px',
+                borderBottom: '1px solid #f1f5f9',
+                color: '#1e293b',
+                textAlign: 'right',
+                fontWeight: 'bold',
+              }}>
+                ₹{planBasePrice.toLocaleString('en-IN')}
+              </td>
+            </tr>
+          </tbody>
+        </table>
 
         {/* Financial Calculation Breakdown */}
-        <div className="flex justify-end pt-2">
-          <div className="w-72 space-y-1.5 text-xs text-slate-600">
-            <div className="flex justify-between">
-              <span>Plan Base Amount:</span>
-              <span className="font-semibold text-slate-800">
-                ₹{planBasePrice.toLocaleString('en-IN')}
-              </span>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
+          <div style={{ width: '300px' }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: '12px',
+              padding: '4px 0',
+              color: '#475569',
+            }}>
+              <span>Plan Base Fee:</span>
+              <span>₹{planBasePrice.toLocaleString('en-IN')}</span>
             </div>
 
             {discountApplied > 0 && (
-              <div className="flex justify-between text-emerald-600 font-semibold">
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '12px',
+                padding: '4px 0',
+                color: '#15803d',
+                fontWeight: 600,
+              }}>
                 <span>Discount Applied:</span>
                 <span>-₹{discountApplied.toLocaleString('en-IN')}</span>
               </div>
             )}
 
-            <div className="flex justify-between font-bold text-slate-900 pt-1 border-t border-slate-200">
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: '12px',
+              padding: '6px 0 4px',
+              color: '#0f172a',
+              fontWeight: 800,
+              borderTop: '1px solid #e2e8f0',
+              marginTop: '4px',
+            }}>
               <span>Net Payable:</span>
               <span>₹{finalPayable.toLocaleString('en-IN')}</span>
             </div>
 
-            <div className="flex justify-between font-black text-emerald-600 text-sm bg-emerald-50 p-2 rounded-xl border border-emerald-100">
-              <span>Amount Paid:</span>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              fontSize: '14px',
+              fontWeight: 900,
+              color: '#15803d',
+              background: '#f0fdf4',
+              padding: '6px 10px',
+              borderRadius: '6px',
+              border: '1px solid #bbf7d0',
+              marginTop: '6px',
+            }}>
+              <span>Amount Paid (INR):</span>
               <span>₹{amountPaid.toLocaleString('en-IN')}</span>
             </div>
 
             {remainingDues > 0 ? (
-              <div className="flex justify-between font-bold text-rose-600 bg-rose-50 p-2 rounded-xl border border-rose-100">
-                <span>Balance Dues Remaining:</span>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                fontSize: '12px',
+                fontWeight: 800,
+                color: '#b91c1c',
+                background: '#fef2f2',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                border: '1px solid #fecaca',
+                marginTop: '6px',
+              }}>
+                <span>Balance Due:</span>
                 <span>₹{remainingDues.toLocaleString('en-IN')}</span>
               </div>
             ) : (
-              <div className="flex items-center justify-between text-emerald-700 font-bold bg-emerald-50 p-2 rounded-xl border border-emerald-100">
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                fontSize: '11px',
+                color: '#15803d',
+                fontWeight: 'bold',
+                padding: '4px 0',
+                marginTop: '4px',
+              }}>
                 <span>Payment Status:</span>
-                <span>✓ Settled in Full</span>
+                <span>✓ Paid in Full</span>
               </div>
             )}
           </div>
         </div>
 
         {/* Terms & Authorized Stamp */}
-        <div className="pt-6 border-t border-slate-200 grid grid-cols-2 items-end gap-4 text-[10px] text-slate-500">
-          <div className="space-y-1">
-            <p className="font-bold text-slate-700">Terms & Conditions:</p>
-            <p>1. Fees once paid are non-refundable and non-transferable.</p>
-            <p>2. Please maintain gym discipline and equipment hygiene.</p>
-            <p>3. Official receipt issued by Morya Fitness, Sinnar.</p>
+        <div style={{
+          borderTop: '1px dashed #cbd5e1',
+          paddingTop: '16px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-end',
+        }}>
+          <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.4', maxWidth: '60%' }}>
+            <strong style={{ color: '#475569', display: 'block', marginBottom: '2px' }}>
+              Terms & Conditions:
+            </strong>
+            1. Fees once paid are non-refundable and non-transferable.<br />
+            2. Please maintain gym hygiene, discipline, and equipment care.<br />
+            3. Official computer-generated receipt for Morya Fitness, Sinnar.
           </div>
 
-          <div className="text-right space-y-2 flex flex-col items-end">
-            <div className="inline-flex flex-col items-center -rotate-6 transition-transform hover:rotate-0">
-              <div className="w-16 h-16 rounded-full border-2 border-blue-900 p-0.5 bg-white shadow-sm ring-2 ring-blue-100 flex items-center justify-center overflow-hidden">
-                <img src="/logo.png" alt="Morya Fitness Seal" className="w-full h-full object-cover rounded-full" />
+          <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              marginBottom: '6px',
+              transform: 'rotate(-6deg)',
+            }}>
+              <div style={{
+                width: '72px',
+                height: '72px',
+                borderRadius: '50%',
+                border: '2.5px solid #1e3a8a',
+                padding: '2px',
+                background: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 0 0 2px rgba(30, 58, 138, 0.2)',
+                overflow: 'hidden',
+              }}>
+                <img
+                  src="/logo.png"
+                  alt="Morya Fitness Seal"
+                  style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+                />
               </div>
-              <span className="text-[8px] font-black tracking-wider text-blue-900 uppercase mt-1 px-2 py-0.5 bg-blue-50 border border-blue-300 rounded">
+              <div style={{
+                fontSize: '8px',
+                fontWeight: 800,
+                color: '#1e3a8a',
+                textTransform: 'uppercase',
+                letterSpacing: '0.5px',
+                marginTop: '3px',
+                border: '1px solid #1e3a8a',
+                padding: '1px 6px',
+                borderRadius: '4px',
+                background: '#eff6ff',
+              }}>
                 OFFICIAL SEAL • SINNAR
-              </span>
+              </div>
             </div>
-            <div className="w-32 border-b border-slate-300" />
-            <p className="font-bold text-slate-800 text-xs">Authorized Signature & Seal</p>
-            <p className="text-[9px] text-slate-500">Morya Fitness, Sinnar</p>
+
+            <div style={{
+              width: '140px',
+              borderBottom: '1px solid #0f172a',
+              marginTop: '4px',
+              marginBottom: '4px',
+              marginLeft: 'auto',
+            }} />
+            <div style={{ fontSize: '10px', fontWeight: 800, color: '#0f172a', textTransform: 'uppercase' }}>
+              AUTHORIZED SIGNATURE & SEAL
+            </div>
+            <div style={{ fontSize: '9px', color: '#64748b', marginTop: '2px' }}>
+              Morya Fitness, Sinnar
+            </div>
           </div>
         </div>
       </div>

@@ -40,41 +40,52 @@ export const generatePdfFromElement = async (
     // Wait for all logo and seal images to finish loading
     await waitForImages(element);
 
-    // Capture the element using html2canvas
+    // Capture the element using html2canvas with retina scale
     const canvas = await html2canvas(element, {
       scale: 2.5, // 2.5x scale for sharp vector-like print & mobile viewing quality
       useCORS: true,
       allowTaint: true,
       backgroundColor: '#ffffff',
       logging: false,
-      windowWidth: 1280, // Emulate high-res viewport so media queries don't collapse cards
+      windowWidth: 1280,
       onclone: (clonedDoc) => {
         const clonedEl = clonedDoc.getElementById(elementId);
         if (clonedEl) {
           // Force fixed card width for the capture so it renders consistently regardless of viewport
-          clonedEl.style.width = '640px';
-          clonedEl.style.maxWidth = '640px';
+          clonedEl.style.width = '650px';
+          clonedEl.style.maxWidth = '650px';
           clonedEl.style.margin = '0 auto';
           clonedEl.style.overflow = 'visible';
           clonedEl.style.boxSizing = 'border-box';
-          clonedEl.style.boxShadow = 'none'; // Clean flat border for the PDF page
+          clonedEl.style.boxShadow = 'none';
         }
       },
     });
 
     const imgData = canvas.toDataURL('image/png', 1.0);
 
-    // Standard A4 width in PostScript points is 595.28 pt
-    const pdfWidth = 595.28;
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    // Standard A4 width and height in points
+    const a4Width = 595.28;
+    const a4Height = 841.89;
+
+    // Card width on PDF page with 24pt margins on each side
+    const marginX = 24;
+    const cardPdfWidth = a4Width - (2 * marginX); // 547.28 pt
+    const cardPdfHeight = (canvas.height * cardPdfWidth) / canvas.width;
+
+    // Standard A4 page, centered vertically if it fits, or single-page with margin if longer
+    const totalPdfHeight = Math.max(a4Height, cardPdfHeight + 48);
+    const topMarginY = totalPdfHeight === a4Height
+      ? Math.max(24, (a4Height - cardPdfHeight) / 2)
+      : 24;
 
     const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'pt',
-      format: [pdfWidth, pdfHeight],
+      format: [a4Width, totalPdfHeight],
     });
 
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight, undefined, 'FAST');
+    pdf.addImage(imgData, 'PNG', marginX, topMarginY, cardPdfWidth, cardPdfHeight, undefined, 'FAST');
     const pdfBlob = pdf.output('blob');
 
     return new File([pdfBlob], fileName, { type: 'application/pdf' });
