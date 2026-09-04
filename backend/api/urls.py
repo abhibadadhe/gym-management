@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     CustomTokenObtainPairView, UserProfileView, GymSettingsView,
     ForgotPasswordView, ResetPasswordView, ForgotUsernameView,
+    RequestUsernameResetView, ResetUsernameView,
     DashboardStatsView, MemberViewSet, MembershipPlanViewSet,
     PaymentViewSet, AttendanceViewSet, TrainerViewSet,
     WorkoutPlanViewSet, ExpenseViewSet, ExpenseCategoryViewSet, FinancialSummaryView,
@@ -34,6 +35,8 @@ urlpatterns = [
     path('auth/forgot-password/', ForgotPasswordView.as_view(), name='forgot_password'),
     path('auth/reset-password/', ResetPasswordView.as_view(), name='reset_password'),
     path('auth/forgot-username/', ForgotUsernameView.as_view(), name='forgot_username'),
+    path('auth/request-username-reset/', RequestUsernameResetView.as_view(), name='request_username_reset'),
+    path('auth/reset-username/', ResetUsernameView.as_view(), name='reset_username'),
 
     # Core system endpoints
     path('settings/', GymSettingsView.as_view(), name='gym_settings'),

@@ -66,6 +66,14 @@ export const api = {
     const res = await apiClient.post('/auth/forgot-username/', { email });
     return res.data;
   },
+  requestUsernameResetOtp: async (email: string) => {
+    const res = await apiClient.post('/auth/request-username-reset/', { email });
+    return res.data;
+  },
+  resetUsername: async (data: { email: string; otp: string; new_username: string }) => {
+    const res = await apiClient.post('/auth/reset-username/', data);
+    return res.data;
+  },
   getProfile: async (): Promise<User> => {
     const res = await apiClient.get('/auth/profile/');
     return res.data;

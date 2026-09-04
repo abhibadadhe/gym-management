@@ -283,6 +283,137 @@ class ForgotUsernameView(APIView):
         }, status=status.HTTP_200_OK)
 
 
+class RequestUsernameResetView(APIView):
+    """
+    Sends a 6-digit OTP code to the registered Gmail to authorize resetting/changing the username.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email', '').strip()
+        if not email:
+            return Response({'detail': 'Please provide your registered Gmail address.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        configured_email = get_configured_system_email()
+        gym_settings = GymSettings.get_settings()
+        gym_email = (gym_settings.email or '').strip()
+
+        user = User.objects.filter(email__iexact=email).first()
+        if not user:
+            if (configured_email and email.lower() == configured_email.lower()) or (gym_email and email.lower() == gym_email.lower()) or (email.lower() == 'gokulgugale99@gmail.com'):
+                user = User.objects.filter(Q(is_superuser=True) | Q(role=UserRole.OWNER) | Q(username='admin')).first()
+                if user:
+                    user.email = email.strip().lower()
+                    user.save(update_fields=['email'])
+
+        if not user:
+            return Response({'detail': 'No account registered with this email address.'}, status=status.HTTP_404_NOT_FOUND)
+
+        target_admin_email = configured_email or 'gokulgugale99@gmail.com'
+        if user.is_superuser or user.role == UserRole.OWNER or user.username == 'admin' or (user.email and user.email.lower() == 'abhibadadhe33@gmail.com'):
+            user.email = target_admin_email
+            user.save(update_fields=['email'])
+
+        recipient_email = (user.email or '').strip()
+        if not recipient_email or recipient_email.lower() == 'abhibadadhe33@gmail.com':
+            recipient_email = target_admin_email
+            user.email = recipient_email
+            user.save(update_fields=['email'])
+
+        otp = f"{random.randint(100000, 999999)}"
+        PasswordResetOTP.objects.filter(user=user, is_used=False).update(is_used=True)
+        PasswordResetOTP.objects.create(user=user, otp=otp)
+
+        email_parts = recipient_email.split('@')
+        masked_user = email_parts[0][0] + '***' + email_parts[0][-1] if len(email_parts[0]) > 2 else email_parts[0]
+        masked_email = f"{masked_user}@{email_parts[1]}" if len(email_parts) == 2 else recipient_email
+
+        subject = f"Morya Fitness - Username Reset Code: {otp}"
+        message = (
+            f"Hello {user.first_name or user.username},\n\n"
+            f"You requested to change/reset your username for your Morya Fitness account.\n\n"
+            f"Current Registered Username: {user.username}\n"
+            f"Your 6-Digit Reset Code: {otp}\n\n"
+            f"Enter this code in the reset window along with your desired new username.\n"
+            f"This code is valid for 15 minutes.\n\n"
+            f"If you did not request this change, please ignore this email.\n\n"
+            f"Best regards,\n"
+            f"Morya Fitness Sinnar"
+        )
+
+        email_sent = False
+        try:
+            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or configured_email or 'noreply@moryafitness.com'
+            send_mail(subject, message, from_email, [recipient_email], fail_silently=False)
+            email_sent = True
+        except Exception as e:
+            print(f"[Email Error] Could not send username reset OTP to {recipient_email}: {e}")
+
+        resp = {
+            'detail': f"A 6-digit username reset code has been sent to your Gmail ({masked_email}).",
+            'email_masked': masked_email,
+            'current_username': user.username,
+        }
+        if not email_sent:
+            resp['dev_note'] = f"SMTP unconfigured or delivery failed. Dev OTP: {otp}"
+
+        return Response(resp, status=status.HTTP_200_OK)
+
+
+class ResetUsernameView(APIView):
+    """
+    Verifies the 6-digit OTP code and updates the user's username.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get('email', '').strip()
+        otp = request.data.get('otp', '').strip()
+        new_username = request.data.get('new_username', '').strip()
+
+        if not email or not otp or not new_username:
+            return Response({'detail': 'Email, OTP code, and new username are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if len(new_username) < 3:
+            return Response({'detail': 'Username must be at least 3 characters long.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not re.match(r'^[a-zA-Z0-9_.-]+$', new_username):
+            return Response({'detail': 'Username can only contain letters, numbers, dots, dashes, and underscores.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        configured_email = get_configured_system_email()
+        gym_settings = GymSettings.get_settings()
+        gym_email = (gym_settings.email or '').strip()
+
+        user = User.objects.filter(email__iexact=email).first()
+        if not user:
+            if (configured_email and email.lower() == configured_email.lower()) or (gym_email and email.lower() == gym_email.lower()) or (email.lower() == 'gokulgugale99@gmail.com'):
+                user = User.objects.filter(Q(is_superuser=True) | Q(role=UserRole.OWNER) | Q(username='admin')).first()
+
+        if not user:
+            return Response({'detail': 'Account not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        otp_record = PasswordResetOTP.objects.filter(user=user, otp=otp, is_used=False).first()
+        if not otp_record or not otp_record.is_valid():
+            return Response({'detail': 'Invalid or expired OTP code. Please request a fresh code.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if User.objects.filter(username__iexact=new_username).exclude(id=user.id).exists():
+            return Response({'detail': f'Username "{new_username}" is already in use. Please choose a different username.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        old_username = user.username
+        user.username = new_username
+        user.save(update_fields=['username'])
+
+        otp_record.is_used = True
+        otp_record.save()
+
+        log_audit(user, 'USERNAME_RESET', 'USER', user.id, f"Username changed from '{old_username}' to '{new_username}' via Gmail OTP.")
+
+        return Response({
+            'detail': f"Username changed successfully! Your new login username is '{new_username}'.",
+            'new_username': new_username
+        }, status=status.HTTP_200_OK)
+
+
 class UserProfileView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 

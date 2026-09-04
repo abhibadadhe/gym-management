@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Lock, User, ArrowRight, AlertCircle, Sparkles,
-  Mail, KeyRound, CheckCircle2, Eye, EyeOff, RefreshCw, X, ShieldCheck, Clock
+  Mail, KeyRound, CheckCircle2, Eye, EyeOff, RefreshCw, X, ShieldCheck, Clock, UserCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -40,11 +40,17 @@ export const Login: React.FC = () => {
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetDevNote, setResetDevNote] = useState<string | null>(null);
 
-  // Forgot Username State
+  // Forgot / Reset Username State
+  const [usernameTab, setUsernameTab] = useState<'reset' | 'lookup'>('reset');
+  const [usernameStep, setUsernameStep] = useState<'request' | 'verify'>('request');
   const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [usernameOtp, setUsernameOtp] = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [maskedUsernameEmail, setMaskedUsernameEmail] = useState('');
   const [isUsernameLoading, setIsUsernameLoading] = useState(false);
   const [usernameMessage, setUsernameMessage] = useState<string | null>(null);
   const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [usernameDevNote, setUsernameDevNote] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,7 +145,68 @@ export const Login: React.FC = () => {
     }
   };
 
-  // 3. Request Username via Gmail
+  // 3. Request Username Reset OTP via Gmail
+  const handleRequestUsernameResetOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recoveryEmail.trim()) {
+      setUsernameError('Please enter your registered Gmail address.');
+      return;
+    }
+
+    setIsUsernameLoading(true);
+    setUsernameError(null);
+    setUsernameDevNote(null);
+
+    try {
+      const res = await api.requestUsernameResetOtp(recoveryEmail.trim());
+      setMaskedUsernameEmail(res.email_masked || recoveryEmail.trim());
+      if (res.dev_note) {
+        setUsernameDevNote(res.dev_note);
+      }
+      setUsernameStep('verify');
+    } catch (err: any) {
+      setUsernameError(err.response?.data?.detail || 'No account registered with this email address.');
+    } finally {
+      setIsUsernameLoading(false);
+    }
+  };
+
+  // 4. Verify OTP & Set New Username
+  const handleVerifyAndResetUsername = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!usernameOtp.trim() || !newUsername.trim()) {
+      setUsernameError('Please enter both the OTP code and your new desired username.');
+      return;
+    }
+
+    if (newUsername.trim().length < 3) {
+      setUsernameError('Username must be at least 3 characters.');
+      return;
+    }
+
+    setIsUsernameLoading(true);
+    setUsernameError(null);
+
+    try {
+      const res = await api.resetUsername({
+        email: recoveryEmail.trim(),
+        otp: usernameOtp.trim(),
+        new_username: newUsername.trim(),
+      });
+
+      setModalType('none');
+      const updatedUsername = res.new_username || newUsername.trim();
+      setUsername(updatedUsername);
+      setSuccessNotice(res.detail || `Username successfully changed to '${updatedUsername}'! Please enter your password to sign in.`);
+      setTimeout(() => setSuccessNotice(null), 8000);
+    } catch (err: any) {
+      setUsernameError(err.response?.data?.detail || 'Invalid or expired OTP code.');
+    } finally {
+      setIsUsernameLoading(false);
+    }
+  };
+
+  // 5. Lookup Username via Gmail
   const handleRecoverUsername = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!recoveryEmail.trim()) {
@@ -273,13 +340,18 @@ export const Login: React.FC = () => {
               type="button"
               onClick={() => {
                 setModalType('username');
+                setUsernameTab('reset');
+                setUsernameStep('request');
                 setRecoveryEmail('');
+                setUsernameOtp('');
+                setNewUsername('');
                 setUsernameMessage(null);
                 setUsernameError(null);
+                setUsernameDevNote(null);
               }}
               className="text-slate-500 hover:text-orange-600 font-semibold transition-colors flex items-center gap-1"
             >
-              <span>Forgot Username?</span>
+              <span>Forgot / Reset Username?</span>
             </button>
 
             <button
@@ -503,7 +575,7 @@ export const Login: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* 2. FORGOT USERNAME MODAL (Sends Registered Username to Gmail)             */}
+      {/* 2. FORGOT / RESET USERNAME MODAL (OTP Reset or Lookup via Gmail)           */}
       {/* ========================================================================= */}
       {modalType === 'username' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
@@ -519,15 +591,57 @@ export const Login: React.FC = () => {
             {/* Header */}
             <div className="space-y-1.5">
               <div className="w-11 h-11 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center shadow-xs">
-                <User className="w-5 h-5" />
+                <UserCheck className="w-5 h-5" />
               </div>
               <h3 className="text-lg font-black text-slate-900 font-heading">
-                Recover Your Username
+                {usernameTab === 'reset'
+                  ? (usernameStep === 'request' ? 'Reset Your Username' : 'Enter 6-Digit OTP Code')
+                  : 'Lookup Registered Username'}
               </h3>
               <p className="text-xs text-slate-500 leading-relaxed">
-                Enter your registered Gmail address. We will look up your account and send your registered username to your inbox.
+                {usernameTab === 'reset'
+                  ? (usernameStep === 'request'
+                    ? 'Enter your registered Gmail address. We will send a 6-digit verification code so you can set a new username.'
+                    : `We sent a 6-digit OTP code to your Gmail (${maskedUsernameEmail}). Enter the code and set your new desired username.`)
+                  : 'Enter your registered Gmail address. We will look up your account and send your registered username to your inbox.'}
               </p>
             </div>
+
+            {/* Mode Switcher Tabs */}
+            {usernameStep === 'request' && (
+              <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-xl text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsernameTab('reset');
+                    setUsernameError(null);
+                    setUsernameMessage(null);
+                  }}
+                  className={`py-2 rounded-lg transition-all ${
+                    usernameTab === 'reset'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Reset / Change Username
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsernameTab('lookup');
+                    setUsernameError(null);
+                    setUsernameMessage(null);
+                  }}
+                  className={`py-2 rounded-lg transition-all ${
+                    usernameTab === 'lookup'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Find Current Username
+                </button>
+              </div>
+            )}
 
             {/* Success Message */}
             {usernameMessage && (
@@ -545,52 +659,174 @@ export const Login: React.FC = () => {
               </div>
             )}
 
-            <form onSubmit={handleRecoverUsername} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1.5">Registered Gmail Address</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                    <Mail className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="email"
-                    value={recoveryEmail}
-                    onChange={(e) => setRecoveryEmail(e.target.value)}
-                    placeholder="e.g. xyz@gmail.com"
-                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white font-medium"
-                    required
-                    autoFocus
-                  />
-                </div>
+            {/* Dev Note (if local dev without SMTP) */}
+            {usernameDevNote && (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-mono">
+                {usernameDevNote}
               </div>
+            )}
 
-              <div className="flex items-center justify-end gap-2.5 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setModalType('none')}
-                  className="px-4 py-2.5 text-slate-600 hover:text-slate-800 font-bold rounded-xl transition-colors"
-                >
-                  {usernameMessage ? 'Back to Login' : 'Cancel'}
-                </button>
-                {!usernameMessage && (
-                  <button
-                    type="submit"
-                    disabled={isUsernameLoading}
-                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {isUsernameLoading ? (
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Mail className="w-4 h-4" />
-                    )}
-                    <span>{isUsernameLoading ? 'Sending Username...' : 'Send Username to Gmail'}</span>
-                  </button>
+            {/* TAB 1: RESET USERNAME FLOW */}
+            {usernameTab === 'reset' && (
+              <>
+                {usernameStep === 'request' ? (
+                  <form onSubmit={handleRequestUsernameResetOtp} className="space-y-4 text-xs">
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1.5">Registered Gmail Address</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                          <Mail className="w-4 h-4" />
+                        </div>
+                        <input
+                          type="email"
+                          value={recoveryEmail}
+                          onChange={(e) => setRecoveryEmail(e.target.value)}
+                          placeholder="e.g. gokulgugale99@gmail.com"
+                          className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white font-medium"
+                          required
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-2.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setModalType('none')}
+                        className="px-4 py-2.5 text-slate-600 hover:text-slate-800 font-bold rounded-xl transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isUsernameLoading}
+                        className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center gap-2 disabled:opacity-50"
+                      >
+                        {isUsernameLoading ? (
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Mail className="w-4 h-4" />
+                        )}
+                        <span>{isUsernameLoading ? 'Sending OTP Code...' : 'Send OTP Reset Code'}</span>
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <form onSubmit={handleVerifyAndResetUsername} className="space-y-4 text-xs">
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1.5">6-Digit Gmail OTP Code</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                          <KeyRound className="w-4 h-4" />
+                        </div>
+                        <input
+                          type="text"
+                          maxLength={6}
+                          value={usernameOtp}
+                          onChange={(e) => setUsernameOtp(e.target.value.replace(/\D/g, ''))}
+                          placeholder="e.g. 784190"
+                          className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white font-mono tracking-widest text-base font-bold text-center"
+                          required
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1.5">New Desired Username</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                          <User className="w-4 h-4" />
+                        </div>
+                        <input
+                          type="text"
+                          value={newUsername}
+                          onChange={(e) => setNewUsername(e.target.value)}
+                          placeholder="e.g. gokul or gokul_fitness"
+                          className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white font-medium"
+                          required
+                        />
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1">Letters, numbers, and underscores (min 3 characters).</p>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setUsernameStep('request')}
+                        className="text-slate-500 hover:text-blue-600 font-semibold underline"
+                      >
+                        Resend Code
+                      </button>
+
+                      <button
+                        type="submit"
+                        disabled={isUsernameLoading}
+                        className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md shadow-blue-600/20 transition-all flex items-center gap-2 disabled:opacity-50"
+                      >
+                        {isUsernameLoading ? (
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <ShieldCheck className="w-4 h-4" />
+                        )}
+                        <span>{isUsernameLoading ? 'Updating Username...' : 'Verify & Update Username'}</span>
+                      </button>
+                    </div>
+                  </form>
                 )}
-              </div>
-            </form>
+              </>
+            )}
+
+            {/* TAB 2: LOOKUP CURRENT USERNAME FLOW */}
+            {usernameTab === 'lookup' && (
+              <form onSubmit={handleRecoverUsername} className="space-y-4 text-xs">
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1.5">Registered Gmail Address</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                      <Mail className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="email"
+                      value={recoveryEmail}
+                      onChange={(e) => setRecoveryEmail(e.target.value)}
+                      placeholder="e.g. gokulgugale99@gmail.com"
+                      className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:bg-white font-medium"
+                      required
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setModalType('none')}
+                    className="px-4 py-2.5 text-slate-600 hover:text-slate-800 font-bold rounded-xl transition-colors"
+                  >
+                    {usernameMessage ? 'Back to Login' : 'Cancel'}
+                  </button>
+                  {!usernameMessage && (
+                    <button
+                      type="submit"
+                      disabled={isUsernameLoading}
+                      className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {isUsernameLoading ? (
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Mail className="w-4 h-4" />
+                      )}
+                      <span>{isUsernameLoading ? 'Searching...' : 'Email My Username'}</span>
+                    </button>
+                  )}
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
+
     </div>
   );
 };
