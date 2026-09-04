@@ -1,8 +1,12 @@
+import os
 import json
 import random
 import re
+from pathlib import Path
 from decimal import Decimal
 from datetime import date, datetime, timedelta
+from dotenv import load_dotenv
+from django.conf import settings
 from django.db.models import Sum, Count, Q, F
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
@@ -72,6 +76,31 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
 
 
+def get_configured_system_email() -> str:
+    """
+    Returns the currently configured Gmail address from .env or django settings,
+    dynamically checking .env on disk so updates are reflected immediately.
+    """
+    try:
+        base_dir = Path(settings.BASE_DIR)
+        load_dotenv(base_dir / '.env', override=True)
+        load_dotenv(base_dir.parent / '.env', override=True)
+    except Exception:
+        pass
+
+    env_user = os.environ.get('EMAIL_HOST_USER', '').strip()
+    if env_user:
+        settings.EMAIL_HOST_USER = env_user
+    env_pass = os.environ.get('EMAIL_HOST_PASSWORD', '').strip()
+    if env_pass:
+        settings.EMAIL_HOST_PASSWORD = env_pass
+    env_from = os.environ.get('DEFAULT_FROM_EMAIL', '').strip()
+    if env_from:
+        settings.DEFAULT_FROM_EMAIL = env_from
+
+    return (os.environ.get('EMAIL_HOST_USER') or getattr(settings, 'EMAIL_HOST_USER', '')).strip()
+
+
 class ForgotPasswordView(APIView):
     permission_classes = [AllowAny]
 
@@ -79,6 +108,10 @@ class ForgotPasswordView(APIView):
         identifier = request.data.get('identifier', '').strip()
         if not identifier:
             return Response({'detail': 'Please provide your registered Gmail address, username, or phone number.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        configured_email = get_configured_system_email()
+        gym_settings = GymSettings.get_settings()
+        gym_email = (gym_settings.email or '').strip()
 
         clean_phone = re.sub(r'[\s\-\+\(\)]', '', identifier)
 
@@ -90,27 +123,22 @@ class ForgotPasswordView(APIView):
             (Q(phone__endswith=clean_phone[-10:]) if len(clean_phone) >= 10 else Q(pk__in=[]))
         ).first()
 
-        # 2. Check against server configured Gmail (EMAIL_HOST_USER) or GymSettings email
-        from django.conf import settings
-        configured_email = getattr(settings, 'EMAIL_HOST_USER', '').strip()
-        gym_settings = GymSettings.get_settings()
-        gym_email = (gym_settings.email or '').strip()
-
-        if not user:
-            # If the entered identifier matches the configured system email or gym official email
+        # 2. If entered identifier is an email matching configured_email or gym_email, map to Owner/Admin
+        if not user and '@' in identifier:
             if (configured_email and identifier.lower() == configured_email.lower()) or (gym_email and identifier.lower() == gym_email.lower()):
                 user = User.objects.filter(Q(is_superuser=True) | Q(role=UserRole.OWNER) | Q(username='admin')).first()
                 if user:
-                    user.email = identifier
+                    user.email = identifier.strip().lower()
                     user.save(update_fields=['email'])
 
         if not user:
             return Response({'detail': 'No registered account found matching this username, email, or phone number.'}, status=status.HTTP_404_NOT_FOUND)
 
-        # 3. If user exists but email is missing or set to placeholder domain (@moryafitness.com)
-        if (not user.email or user.email.endswith('@moryafitness.com')) and configured_email and (user.is_superuser or user.role == UserRole.OWNER or user.username == 'admin'):
-            user.email = configured_email
-            user.save(update_fields=['email'])
+        # 3. For Owner / Admin accounts, automatically synchronize email with the configured system email (EMAIL_HOST_USER)
+        if configured_email and (user.is_superuser or user.role == UserRole.OWNER or user.username == 'admin'):
+            if user.email != configured_email:
+                user.email = configured_email
+                user.save(update_fields=['email'])
 
         if not user.email:
             return Response({'detail': f'Account "{user.username}" exists, but has no email address associated with it. Please contact the administrator.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -169,6 +197,10 @@ class ResetPasswordView(APIView):
         if len(new_password) < 4:
             return Response({'detail': 'Password must be at least 4 characters long.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        configured_email = get_configured_system_email()
+        gym_settings = GymSettings.get_settings()
+        gym_email = (gym_settings.email or '').strip()
+
         clean_phone = re.sub(r'[\s\-\+\(\)]', '', identifier)
         user = User.objects.filter(
             Q(email__iexact=identifier) |
@@ -177,11 +209,7 @@ class ResetPasswordView(APIView):
             (Q(phone__endswith=clean_phone[-10:]) if len(clean_phone) >= 10 else Q(pk__in=[]))
         ).first()
 
-        if not user:
-            from django.conf import settings
-            configured_email = getattr(settings, 'EMAIL_HOST_USER', '').strip()
-            gym_settings = GymSettings.get_settings()
-            gym_email = (gym_settings.email or '').strip()
+        if not user and '@' in identifier:
             if (configured_email and identifier.lower() == configured_email.lower()) or (gym_email and identifier.lower() == gym_email.lower()):
                 user = User.objects.filter(Q(is_superuser=True) | Q(role=UserRole.OWNER) | Q(username='admin')).first()
 
@@ -211,16 +239,16 @@ class ForgotUsernameView(APIView):
         if not email:
             return Response({'detail': 'Please provide your registered Gmail address.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        configured_email = get_configured_system_email()
+        gym_settings = GymSettings.get_settings()
+        gym_email = (gym_settings.email or '').strip()
+
         users = User.objects.filter(email__iexact=email)
         if not users.exists():
-            from django.conf import settings
-            configured_email = getattr(settings, 'EMAIL_HOST_USER', '').strip()
-            gym_settings = GymSettings.get_settings()
-            gym_email = (gym_settings.email or '').strip()
             if (configured_email and email.lower() == configured_email.lower()) or (gym_email and email.lower() == gym_email.lower()):
                 admin_user = User.objects.filter(Q(is_superuser=True) | Q(role=UserRole.OWNER) | Q(username='admin')).first()
                 if admin_user:
-                    admin_user.email = email
+                    admin_user.email = email.strip().lower()
                     admin_user.save(update_fields=['email'])
                     users = User.objects.filter(id=admin_user.id)
 
