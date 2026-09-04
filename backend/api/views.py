@@ -790,6 +790,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
             },
             'plan': {
                 'name': membership.plan.name if membership and membership.plan else 'Gym Membership Fee',
+                'description': membership.plan.description if membership and membership.plan else '',
                 'duration_days': membership.plan.duration_days if membership and membership.plan else 30,
                 'start_date': str(membership.start_date) if membership else str(payment.payment_date),
                 'end_date': str(membership.end_date) if membership else None,
@@ -803,7 +804,10 @@ class PaymentViewSet(viewsets.ModelViewSet):
             'membership': {
                 'start_date': str(membership.start_date) if membership else str(payment.payment_date),
                 'end_date': str(membership.end_date) if membership else None,
+                'plan_name': membership.plan.name if membership and membership.plan else 'Gym Membership Fee',
+                'plan_description': membership.plan.description if membership and membership.plan else '',
             },
+            'plan_description': membership.plan.description if membership and membership.plan else '',
             'discount_applied': discount,
             'final_payable': final_amount,
             'amount_paid': float(payment.amount),

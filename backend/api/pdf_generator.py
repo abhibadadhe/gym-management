@@ -1,5 +1,6 @@
 import io
 import os
+import html
 from django.conf import settings as django_settings
 from api.models import GymSettings
 from reportlab.lib.pagesizes import A4
@@ -14,11 +15,17 @@ from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 def get_gym_logo_path() -> str | None:
     candidates = [
         os.path.join(django_settings.BASE_DIR, 'static', 'logo.png'),
+        os.path.join(django_settings.BASE_DIR, 'static', 'logo.jpeg'),
         os.path.join(django_settings.BASE_DIR, '..', 'frontend', 'public', 'logo.png'),
+        os.path.join(django_settings.BASE_DIR, '..', 'frontend', 'public', 'logo.jpeg'),
         os.path.join(django_settings.BASE_DIR, '..', 'frontend', 'dist', 'logo.png'),
+        os.path.join(django_settings.BASE_DIR, '..', 'frontend', 'dist', 'logo.jpeg'),
         '/app/static/logo.png',
+        '/app/static/logo.jpeg',
         '/app/frontend/public/logo.png',
+        '/app/frontend/public/logo.jpeg',
         '/app/frontend/dist/logo.png',
+        '/app/frontend/dist/logo.jpeg',
     ]
     for p in candidates:
         if os.path.exists(p):
@@ -40,6 +47,7 @@ def generate_payment_receipt_pdf(payment) -> bytes:
     gym_address = settings.address or 'Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103'
 
     plan_name = membership.plan.name if membership and membership.plan else 'Gym Membership Fee'
+    plan_description = (membership.plan.description or '').strip() if membership and membership.plan else ''
     duration_days = membership.plan.duration_days if membership and membership.plan else 30
     plan_price = float(membership.price) if membership else float(payment.amount)
     discount = float(membership.discount) if membership else 0.0
@@ -236,6 +244,11 @@ def generate_payment_receipt_pdf(payment) -> bytes:
     inner_elements.append(Spacer(1, 10))
 
     # 3. Itemized Fee Table
+    particulars_content = [Paragraph(html.escape(plan_name), td_item_name)]
+    if plan_description:
+        particulars_content.append(Spacer(1, 1))
+        particulars_content.append(Paragraph(html.escape(plan_description), td_item_desc))
+
     items_data = [
         [
             Paragraph("MEMBERSHIP PARTICULARS", th_left),
@@ -243,7 +256,7 @@ def generate_payment_receipt_pdf(payment) -> bytes:
             Paragraph("RATE (INR)", th_right)
         ],
         [
-            [Paragraph(plan_name, td_item_name), Spacer(1, 1), Paragraph("Full Gym &amp; Equipment Access", td_item_desc)],
+            particulars_content,
             Paragraph(f"{duration_days} Days", td_val),
             Paragraph(f"Rs. {plan_price:,.0f}", td_amt)
         ]

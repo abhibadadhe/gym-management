@@ -62,6 +62,7 @@ export interface MemberMembership {
   member_code?: string;
   plan: number;
   plan_name: string;
+  plan_description?: string;
   plan_duration_days?: number;
   start_date: string;
   end_date: string;
@@ -85,6 +86,7 @@ export interface Payment {
   member_id: string;
   membership?: number | null;
   plan_name?: string;
+  plan_description?: string;
   amount: string | number;
   payment_method: PaymentMethod;
   transaction_ref?: string;
@@ -273,6 +275,7 @@ export interface ReceiptData {
   };
   plan: {
     name: string;
+    description?: string;
     duration_days: number;
     start_date: string;
     end_date: string;
@@ -282,6 +285,7 @@ export interface ReceiptData {
     paid_amount: number;
     pending_amount: number;
   };
+  plan_description?: string;
   payment: {
     amount: number;
     method: string;

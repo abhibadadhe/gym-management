@@ -45,6 +45,7 @@ class PaymentSerializer(serializers.ModelSerializer):
     member_id = serializers.ReadOnlyField(source='member.member_id')
     received_by_name = serializers.ReadOnlyField(source='received_by.get_full_name')
     plan_name = serializers.ReadOnlyField(source='membership.plan.name')
+    plan_description = serializers.ReadOnlyField(source='membership.plan.description')
 
     class Meta:
         model = Payment
@@ -69,6 +70,7 @@ class PaymentSerializer(serializers.ModelSerializer):
 class MemberMembershipSerializer(serializers.ModelSerializer):
     plan_name = serializers.ReadOnlyField(source='plan.name')
     plan_duration_days = serializers.ReadOnlyField(source='plan.duration_days')
+    plan_description = serializers.ReadOnlyField(source='plan.description')
     member_name = serializers.ReadOnlyField(source='member.full_name')
     member_code = serializers.ReadOnlyField(source='member.member_id')
     status = serializers.ReadOnlyField()

@@ -38,8 +38,14 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
     year: 'numeric',
   });
 
-  const planName = receipt.plan?.name || 'One Month';
-  const durationDays = receipt.plan?.duration_days ?? 30;
+  const planName = receipt.plan?.name || receipt.plan_name || 'One Month';
+  const planDescription =
+    receipt.plan?.description ||
+    receipt.plan_description ||
+    receipt.membership?.plan_description ||
+    receipt.membership?.plan?.description ||
+    '';
+  const durationDays = receipt.plan?.duration_days ?? receipt.plan_duration_days ?? 30;
   const startDate = receipt.plan?.start_date || receipt.membership?.start_date || receipt.start_date || '';
   const endDate = receipt.plan?.end_date || receipt.membership?.end_date || receipt.end_date || '';
   const validityRange = startDate && endDate ? `${startDate} to ${endDate}` : '';
@@ -115,6 +121,7 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
         `📄 *Receipt No:* ${receiptNo}\n` +
         `📅 *Date:* ${formattedDate}\n` +
         `💪 *Plan:* ${planName} (${durationDays} Days)\n` +
+        (planDescription ? `📝 *Details:* ${planDescription}\n` : '') +
         (validityRange ? `🗓️ *Validity:* ${validityRange}\n` : '') +
         `💳 *Payment Mode:* ${paymentMethod}\n` +
         (transactionRef ? `🔖 *Ref / UTR:* ${transactionRef}\n` : '') +
@@ -282,7 +289,7 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             <img
-              src="/logo.png"
+              src="/logo.jpeg"
               alt="Morya Fitness"
               style={{
                 width: '56px',
@@ -469,9 +476,11 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
                 color: '#1e293b',
               }}>
                 <strong style={{ color: '#0f172a' }}>{planName}</strong>
-                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                  Full Gym & Equipment Access
-                </div>
+                {planDescription ? (
+                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px', whiteSpace: 'pre-line' }}>
+                    {planDescription}
+                  </div>
+                ) : null}
               </td>
               <td style={{
                 padding: '12px',
@@ -632,7 +641,7 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
                 overflow: 'hidden',
               }}>
                 <img
-                  src="/logo.png"
+                  src="/logo.jpeg"
                   alt="Morya Fitness Seal"
                   style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', backgroundColor: '#07080a' }}
                 />

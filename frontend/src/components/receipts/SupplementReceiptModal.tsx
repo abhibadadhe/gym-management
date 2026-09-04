@@ -232,7 +232,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                 <img
-                  src="/logo.png"
+                  src="/logo.jpeg"
                   alt="Logo"
                   style={{
                     width: '56px',
@@ -590,7 +590,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                     overflow: 'hidden',
                   }}>
                     <img
-                      src="/logo.png"
+                      src="/logo.jpeg"
                       alt="Morya Fitness Seal"
                       style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', backgroundColor: '#07080a' }}
                     />
