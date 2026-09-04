@@ -183,7 +183,7 @@ export const Login: React.FC = () => {
           <div className="relative inline-block">
             <div className="absolute -inset-1.5 bg-gradient-to-tr from-orange-500 to-amber-500 rounded-full blur-sm opacity-50" />
             <img
-              src="/logo.jpeg"
+              src="/logo.png"
               alt="Morya Fitness Logo"
               className="relative w-24 h-24 rounded-full object-cover border-2 border-white shadow-xl mx-auto bg-black"
             />

@@ -51,7 +51,7 @@ const AppContent: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center text-slate-500 gap-3">
         <img
-          src="/logo.jpeg"
+          src="/logo.png"
           alt="Morya Fitness"
           className="w-16 h-16 rounded-full object-cover border-2 border-orange-500 shadow-lg animate-pulse bg-black"
         />

@@ -101,7 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="p-5 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img
-              src="/logo.jpeg"
+              src="/logo.png"
               alt="Morya Fitness Logo"
               className="w-11 h-11 rounded-full object-cover border-2 border-orange-500 shadow-md shadow-orange-500/20 flex-shrink-0 bg-black"
             />
