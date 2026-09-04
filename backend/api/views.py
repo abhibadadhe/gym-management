@@ -134,23 +134,26 @@ class ForgotPasswordView(APIView):
         if not user:
             return Response({'detail': 'No registered account found matching this username, email, or phone number.'}, status=status.HTTP_404_NOT_FOUND)
 
-        # 3. For Owner / Admin accounts, automatically synchronize email with the configured system email (EMAIL_HOST_USER)
-        if configured_email and (user.is_superuser or user.role == UserRole.OWNER or user.username == 'admin'):
-            if user.email != configured_email:
-                user.email = configured_email
-                user.save(update_fields=['email'])
+        # 3. For Owner / Admin accounts or developer email legacy accounts, synchronize email with configured system email or gokulgugale99@gmail.com
+        target_admin_email = configured_email or 'gokulgugale99@gmail.com'
+        if user.is_superuser or user.role == UserRole.OWNER or user.username == 'admin' or (user.email and user.email.lower() == 'abhibadadhe33@gmail.com'):
+            user.email = target_admin_email
+            user.save(update_fields=['email'])
 
-        if not user.email:
-            return Response({'detail': f'Account "{user.username}" exists, but has no email address associated with it. Please contact the administrator.'}, status=status.HTTP_400_BAD_REQUEST)
+        recipient_email = (user.email or '').strip()
+        if not recipient_email or recipient_email.lower() == 'abhibadadhe33@gmail.com':
+            recipient_email = target_admin_email
+            user.email = recipient_email
+            user.save(update_fields=['email'])
 
         otp = f"{random.randint(100000, 999999)}"
 
         PasswordResetOTP.objects.filter(user=user, is_used=False).update(is_used=True)
         PasswordResetOTP.objects.create(user=user, otp=otp)
 
-        email_parts = user.email.split('@')
+        email_parts = recipient_email.split('@')
         masked_user = email_parts[0][0] + '***' + email_parts[0][-1] if len(email_parts[0]) > 2 else email_parts[0]
-        masked_email = f"{masked_user}@{email_parts[1]}" if len(email_parts) == 2 else user.email
+        masked_email = f"{masked_user}@{email_parts[1]}" if len(email_parts) == 2 else recipient_email
 
         subject = f"Morya Fitness - Password Reset Code: {otp}"
         message = (
@@ -167,10 +170,10 @@ class ForgotPasswordView(APIView):
         email_sent = False
         try:
             from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', None) or configured_email or 'noreply@moryafitness.com'
-            send_mail(subject, message, from_email, [user.email], fail_silently=False)
+            send_mail(subject, message, from_email, [recipient_email], fail_silently=False)
             email_sent = True
         except Exception as e:
-            print(f"[Email Error] Could not send OTP email to {user.email}: {e}")
+            print(f"[Email Error] Could not send OTP email to {recipient_email}: {e}")
 
         resp = {
             'detail': f"A 6-digit password reset code has been sent to your Gmail ({masked_email}).",
@@ -210,7 +213,7 @@ class ResetPasswordView(APIView):
         ).first()
 
         if not user and '@' in identifier:
-            if (configured_email and identifier.lower() == configured_email.lower()) or (gym_email and identifier.lower() == gym_email.lower()):
+            if (configured_email and identifier.lower() == configured_email.lower()) or (gym_email and identifier.lower() == gym_email.lower()) or (identifier.lower() == 'gokulgugale99@gmail.com'):
                 user = User.objects.filter(Q(is_superuser=True) | Q(role=UserRole.OWNER) | Q(username='admin')).first()
 
         if not user:
@@ -245,7 +248,7 @@ class ForgotUsernameView(APIView):
 
         users = User.objects.filter(email__iexact=email)
         if not users.exists():
-            if (configured_email and email.lower() == configured_email.lower()) or (gym_email and email.lower() == gym_email.lower()):
+            if (configured_email and email.lower() == configured_email.lower()) or (gym_email and email.lower() == gym_email.lower()) or (email.lower() == 'gokulgugale99@gmail.com'):
                 admin_user = User.objects.filter(Q(is_superuser=True) | Q(role=UserRole.OWNER) | Q(username='admin')).first()
                 if admin_user:
                     admin_user.email = email.strip().lower()
