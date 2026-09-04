@@ -53,7 +53,7 @@ const AppContent: React.FC = () => {
         <img
           src="/logo.png"
           alt="Morya Fitness"
-          className="w-16 h-16 rounded-full object-cover border-2 border-orange-500 shadow-lg animate-pulse"
+          className="w-16 h-16 rounded-full object-cover border-2 border-orange-500 shadow-lg animate-pulse bg-black"
         />
         <span className="text-xs font-bold uppercase tracking-widest text-slate-400">
           Starting Morya Fitness System...

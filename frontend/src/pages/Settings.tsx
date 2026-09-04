@@ -191,7 +191,7 @@ export const Settings: React.FC = () => {
           <img
             src="/logo.png"
             alt="Morya Fitness Logo"
-            className="w-16 h-16 rounded-full object-cover border-2 border-orange-500 shadow-md flex-shrink-0"
+            className="w-16 h-16 rounded-full object-cover border-2 border-orange-500 shadow-md flex-shrink-0 bg-black"
           />
           <div className="space-y-0.5">
             <span className="font-bold text-slate-900 text-sm block">Official Gym Emblem</span>
@@ -398,7 +398,7 @@ export const Settings: React.FC = () => {
           {/* Header */}
           <div className="border-b-2 border-slate-900 pb-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <img src="/logo.png" alt="Morya Fitness" className="w-14 h-14 rounded-full object-cover border-2 border-orange-500 shadow-xs" />
+              <img src="/logo.png" alt="Morya Fitness" className="w-14 h-14 rounded-full object-cover border-2 border-orange-500 shadow-xs bg-black" />
               <div>
                 <h1 className="text-xl font-black uppercase font-heading tracking-tight">{formData.name}</h1>
                 <p className="text-xs font-semibold text-slate-700">{formData.tagline}</p>
@@ -663,7 +663,7 @@ export const Settings: React.FC = () => {
               {/* Official Seal Stamp (Same as Receipt) */}
               <div className="inline-flex flex-col items-center -rotate-6 mb-1">
                 <div className="w-16 h-16 rounded-full border-2 border-blue-900 p-0.5 bg-white shadow-xs ring-2 ring-blue-100 flex items-center justify-center overflow-hidden">
-                  <img src="/logo.png" alt="Morya Fitness Seal" className="w-full h-full object-cover rounded-full" />
+                  <img src="/logo.png" alt="Morya Fitness Seal" className="w-full h-full object-cover rounded-full bg-black" />
                 </div>
                 <span className="text-[8px] font-black tracking-wider text-blue-900 uppercase mt-1 px-2 py-0.5 bg-blue-50 border border-blue-300 rounded">
                   OFFICIAL SEAL • SINNAR

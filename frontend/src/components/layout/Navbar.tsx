@@ -92,7 +92,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <img
               src="/logo.png"
               alt="Morya Fitness"
-              className="w-8 h-8 rounded-full object-cover border border-orange-500 shadow-sm flex-shrink-0"
+              className="w-8 h-8 rounded-full object-cover border border-orange-500 shadow-sm flex-shrink-0 bg-black"
             />
             <div className="hidden sm:block">
               <div className="flex items-center gap-2">

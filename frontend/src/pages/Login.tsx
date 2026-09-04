@@ -185,7 +185,7 @@ export const Login: React.FC = () => {
             <img
               src="/logo.png"
               alt="Morya Fitness Logo"
-              className="relative w-24 h-24 rounded-full object-cover border-2 border-white shadow-xl mx-auto"
+              className="relative w-24 h-24 rounded-full object-cover border-2 border-white shadow-xl mx-auto bg-black"
             />
           </div>
 

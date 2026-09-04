@@ -241,6 +241,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                     objectFit: 'cover',
                     border: '2px solid #ea580c',
                     flexShrink: 0,
+                    backgroundColor: '#07080a',
                   }}
                 />
                 <div>
@@ -591,7 +592,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                     <img
                       src="/logo.png"
                       alt="Morya Fitness Seal"
-                      style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+                      style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', backgroundColor: '#07080a' }}
                     />
                   </div>
                   <div style={{

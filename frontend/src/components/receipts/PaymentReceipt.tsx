@@ -291,6 +291,7 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
                 objectFit: 'cover',
                 border: '2px solid #ea580c',
                 flexShrink: 0,
+                backgroundColor: '#07080a',
               }}
             />
             <div>
@@ -633,7 +634,7 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
                 <img
                   src="/logo.png"
                   alt="Morya Fitness Seal"
-                  style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+                  style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', backgroundColor: '#07080a' }}
                 />
               </div>
               <div style={{

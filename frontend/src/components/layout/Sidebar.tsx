@@ -103,7 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <img
               src="/logo.png"
               alt="Morya Fitness Logo"
-              className="w-11 h-11 rounded-full object-cover border-2 border-orange-500 shadow-md shadow-orange-500/20 flex-shrink-0"
+              className="w-11 h-11 rounded-full object-cover border-2 border-orange-500 shadow-md shadow-orange-500/20 flex-shrink-0 bg-black"
             />
             <div>
               <h1 className="font-heading font-black text-slate-900 text-base tracking-tight leading-tight">
