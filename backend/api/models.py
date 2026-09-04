@@ -120,6 +120,14 @@ class Member(models.Model):
     def __str__(self):
         return f"{self.member_id} - {self.first_name} {self.last_name}"
 
+    def save(self, *args, **kwargs):
+        if self.email:
+            cleaned = str(self.email).strip().lower()
+            self.email = cleaned if cleaned else None
+        else:
+            self.email = None
+        super().save(*args, **kwargs)
+
     @property
     def full_name(self):
         return f"{self.first_name} {self.last_name}".strip()

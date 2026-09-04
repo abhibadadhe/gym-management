@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   ShoppingBag, Plus, Search, Filter, AlertTriangle,
   CheckCircle2, PackagePlus, RefreshCw, Printer,
@@ -14,6 +14,7 @@ import { api } from '../services/api';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { SupplementReceiptModal } from '../components/receipts/SupplementReceiptModal';
 import { Modal } from '../components/common/Modal';
+import { SearchableSelect, SearchableSelectOption } from '../components/common/SearchableSelect';
 
 export const Supplements: React.FC = () => {
   // Data States
@@ -142,6 +143,49 @@ export const Supplements: React.FC = () => {
 
     return matchesSearch && matchesCategory && matchesLowStock;
   });
+
+  // Searchable Select Options for POS & Modals
+  const memberSelectOptions: SearchableSelectOption[] = useMemo(() => {
+    return members.map((m) => {
+      let badgeColor: 'emerald' | 'amber' | 'rose' | 'slate' = 'slate';
+      if (m.membership_status === 'ACTIVE') badgeColor = 'emerald';
+      else if (m.membership_status === 'EXPIRING_SOON') badgeColor = 'amber';
+      else if (m.membership_status === 'EXPIRED') badgeColor = 'rose';
+
+      return {
+        value: m.id.toString(),
+        label: m.full_name,
+        sublabel: `+91 ${m.phone}`,
+        badge: `${m.member_id} • ${m.membership_status}`,
+        badgeColor,
+        searchKey: `${m.full_name} ${m.phone} ${m.member_id}`,
+      };
+    });
+  }, [members]);
+
+  const productSelectOptions: SearchableSelectOption[] = useMemo(() => {
+    return products.map((p) => ({
+      value: p.id,
+      label: `${p.name} (${p.brand})`,
+      sublabel: `₹${Number(p.selling_price).toLocaleString('en-IN')}${p.flavor ? ' • ' + p.flavor : ''}`,
+      badge: p.stock_quantity === 0 ? 'Out of Stock' : `Stock: ${p.stock_quantity}`,
+      badgeColor: p.stock_quantity === 0 ? 'rose' : p.stock_quantity <= 5 ? 'amber' : 'emerald',
+      disabled: p.stock_quantity === 0,
+      searchKey: `${p.name} ${p.brand} ${p.flavor || ''} ${p.sku_barcode || ''}`,
+    }));
+  }, [products]);
+
+  const categorySelectOptions: SearchableSelectOption[] = useMemo(() => {
+    return [
+      { value: '', label: '-- General Category --' },
+      ...categories.map((cat) => ({
+        value: cat.id.toString(),
+        label: cat.name,
+        sublabel: cat.description || undefined,
+        searchKey: `${cat.name} ${cat.description || ''}`,
+      })),
+    ];
+  }, [categories]);
 
   // Handle Add Product Submit
   const handleAddProduct = async (e: React.FormEvent) => {
@@ -950,20 +994,19 @@ export const Supplements: React.FC = () => {
 
               {customerType === 'member' ? (
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Select Member</label>
-                  <select
+                  <label className="block text-slate-700 font-bold mb-1">
+                    Select Member <span className="text-rose-600">*</span>
+                  </label>
+                  <SearchableSelect
+                    options={memberSelectOptions}
                     value={selectedMemberId}
-                    onChange={(e) => setSelectedMemberId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                    onChange={(val) => setSelectedMemberId(String(val))}
+                    placeholder="-- Search or Choose Member from Registry --"
+                    searchPlaceholder="Search member name, phone (+91), or Member ID..."
                     required
-                  >
-                    <option value="">-- Choose Member from Registry --</option>
-                    {members.map((m) => (
-                      <option key={m.id} value={m.id.toString()}>
-                        {m.full_name} ({m.member_id}) - {m.phone}
-                      </option>
-                    ))}
-                  </select>
+                    clearable
+                    onClear={() => setSelectedMemberId('')}
+                  />
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1006,30 +1049,53 @@ export const Supplements: React.FC = () => {
                   </button>
                 </div>
 
-                <div className="space-y-2 max-h-48 overflow-y-auto p-1">
+                {/* Quick Search & Add Product Bar */}
+                <div className="p-2.5 rounded-2xl bg-orange-50/60 border border-orange-200/80">
+                  <label className="block text-[10px] uppercase font-bold text-orange-900 mb-1">
+                    + Quick Search & Add Product to Cart
+                  </label>
+                  <SearchableSelect
+                    options={productSelectOptions}
+                    value=""
+                    onChange={(val) => {
+                      const prodId = Number(val);
+                      if (!prodId) return;
+                      const existingIndex = saleItems.findIndex((x) => x.productId === prodId);
+                      if (existingIndex > -1) {
+                        const newItems = [...saleItems];
+                        newItems[existingIndex].quantity += 1;
+                        setSaleItems(newItems);
+                      } else if (saleItems.length === 1 && saleItems[0].productId === 0) {
+                        setSaleItems([{ productId: prodId, quantity: 1 }]);
+                      } else {
+                        setSaleItems([...saleItems, { productId: prodId, quantity: 1 }]);
+                      }
+                    }}
+                    placeholder="Search product name, brand, flavor, or barcode to add..."
+                    searchPlaceholder="Type product name, brand, flavor, or barcode..."
+                    size="sm"
+                  />
+                </div>
+
+                <div className="space-y-2.5 max-h-60 overflow-y-auto p-1">
                   {saleItems.map((item, index) => {
                     const chosenProduct = products.find((p) => p.id === item.productId);
 
                     return (
-                      <div key={index} className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                      <div key={index} className="flex items-center gap-2 p-2.5 rounded-2xl bg-slate-50 border border-slate-200">
                         <div className="flex-1">
-                          <select
-                            value={item.productId}
-                            onChange={(e) => {
+                          <SearchableSelect
+                            options={productSelectOptions}
+                            value={item.productId || ''}
+                            onChange={(val) => {
                               const newItems = [...saleItems];
-                              newItems[index].productId = parseInt(e.target.value) || 0;
+                              newItems[index].productId = Number(val) || 0;
                               setSaleItems(newItems);
                             }}
-                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs focus:outline-none focus:border-orange-500"
+                            placeholder="-- Select Supplement Product --"
+                            searchPlaceholder="Search product by name, brand, flavor..."
                             required
-                          >
-                            <option value={0}>-- Select Supplement Product --</option>
-                            {products.map((p) => (
-                              <option key={p.id} value={p.id} disabled={p.stock_quantity === 0}>
-                                {p.name} ({p.brand}) - ₹{Number(p.selling_price).toLocaleString('en-IN')} [Stock: {p.stock_quantity}]
-                              </option>
-                            ))}
-                          </select>
+                          />
                         </div>
 
                         <div className="w-20">
@@ -1043,7 +1109,7 @@ export const Supplements: React.FC = () => {
                               newItems[index].quantity = parseInt(e.target.value) || 1;
                               setSaleItems(newItems);
                             }}
-                            className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-lg text-slate-900 text-xs text-center focus:outline-none focus:border-orange-500 font-bold"
+                            className="w-full px-2.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-xs text-center focus:outline-none focus:border-orange-500 font-bold"
                             required
                           />
                         </div>
@@ -1190,18 +1256,13 @@ export const Supplements: React.FC = () => {
 
                 <div>
                   <label className="block text-slate-700 font-bold mb-1">Category</label>
-                  <select
+                  <SearchableSelect
+                    options={categorySelectOptions}
                     value={productForm.category}
-                    onChange={(e) => setProductForm({ ...productForm, category: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-medium"
-                  >
-                    <option value="">-- General Category --</option>
-                    {categories.map((cat) => (
-                      <option key={cat.id} value={cat.id.toString()}>
-                        {cat.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setProductForm({ ...productForm, category: String(val) })}
+                    placeholder="-- General Category --"
+                    searchPlaceholder="Search category name..."
+                  />
                 </div>
               </div>
 
@@ -1350,18 +1411,13 @@ export const Supplements: React.FC = () => {
 
                 <div>
                   <label className="block text-slate-700 font-bold mb-1">Category</label>
-                  <select
+                  <SearchableSelect
+                    options={categorySelectOptions}
                     value={editProductForm.category}
-                    onChange={(e) => setEditProductForm({ ...editProductForm, category: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-medium"
-                  >
-                    <option value="">-- General Category --</option>
-                    {categories.map((cat) => (
-                      <option key={cat.id} value={cat.id.toString()}>
-                        {cat.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(val) => setEditProductForm({ ...editProductForm, category: String(val) })}
+                    placeholder="-- General Category --"
+                    searchPlaceholder="Search category name..."
+                  />
                 </div>
               </div>
 

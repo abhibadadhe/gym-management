@@ -91,8 +91,8 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.full_name.trim() || !formData.phone.trim() || !formData.email.trim() || !formData.dob || !formData.gender || !formData.address.trim() || !formData.emergency_contact_phone.trim() || !formData.plan_id) {
-      setErrorMsg('Please fill in all mandatory fields: Full Name, Phone number, Email address, DOB, Gender, Address, Emergency contact no, and Plan.');
+    if (!formData.full_name.trim() || !formData.phone.trim() || !formData.dob || !formData.gender || !formData.address.trim() || !formData.emergency_contact_phone.trim() || !formData.plan_id) {
+      setErrorMsg('Please fill in all mandatory fields: Full Name, Phone number, DOB, Gender, Address, Emergency contact no, and Plan.');
       return;
     }
 
@@ -113,7 +113,7 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
       const payload = {
         full_name: formData.full_name.trim(),
         phone: formData.phone.trim(),
-        email: formData.email.trim(),
+        email: formData.email.trim() || undefined,
         gender: formData.gender,
         dob: formData.dob,
         address: formData.address.trim(),
@@ -309,15 +309,14 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
 
               <div>
                 <label className="block text-slate-700 font-semibold mb-1">
-                  Email Address <span className="text-rose-600">*</span>
+                  Email Address <span className="text-slate-400 font-normal text-xs">(Optional)</span>
                 </label>
                 <input
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="sachin.j@gmail.com"
+                  placeholder="sachin.j@gmail.com (optional)"
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white"
-                  required
                 />
               </div>
 

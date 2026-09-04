@@ -260,7 +260,7 @@ class AddMemberWithMembershipSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=100, required=False)
     last_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
     phone = serializers.CharField(max_length=20)
-    email = serializers.EmailField(required=True)
+    email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     dob = serializers.DateField(required=True)
     gender = serializers.ChoiceField(choices=Member.GENDER_CHOICES, required=True)
     address = serializers.CharField(required=True)
@@ -290,9 +290,11 @@ class AddMemberWithMembershipSerializer(serializers.Serializer):
         return cleaned
 
     def validate_email(self, value):
-        cleaned = value.strip().lower()
+        if not value:
+            return None
+        cleaned = str(value).strip().lower()
         if not cleaned:
-            raise serializers.ValidationError("Email address is required.")
+            return None
         if Member.objects.filter(email__iexact=cleaned).exists():
             raise serializers.ValidationError(f"Email address '{cleaned}' is already registered with another member.")
         return cleaned
@@ -334,11 +336,14 @@ class MemberUpdateSerializer(serializers.ModelSerializer):
         return cleaned
 
     def validate_email(self, value):
-        cleaned = value.strip().lower()
+        if not value:
+            return None
+        cleaned = str(value).strip().lower()
+        if not cleaned:
+            return None
         instance_id = self.instance.id if self.instance else None
-        if cleaned and instance_id:
-            if Member.objects.filter(email__iexact=cleaned).exclude(id=instance_id).exists():
-                raise serializers.ValidationError(f"Email address '{cleaned}' is already registered with another member.")
+        if instance_id and Member.objects.filter(email__iexact=cleaned).exclude(id=instance_id).exists():
+            raise serializers.ValidationError(f"Email address '{cleaned}' is already registered with another member.")
         return cleaned
 
     def update(self, instance, validated_data):

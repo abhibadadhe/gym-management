@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Receipt, Plus, Search, Filter, Trash2, Calendar,
   IndianRupee, RefreshCw, AlertCircle, CheckCircle2, AlertTriangle, X,
@@ -8,6 +8,7 @@ import { Expense, ExpenseCategory } from '../types';
 import { api } from '../services/api';
 import { Modal } from '../components/common/Modal';
 import { useToast } from '../context/ToastContext';
+import { SearchableSelect, SearchableSelectOption } from '../components/common/SearchableSelect';
 
 export const Expenses: React.FC = () => {
   const { showToast } = useToast();
@@ -29,6 +30,27 @@ export const Expenses: React.FC = () => {
   const [categorySuccess, setCategorySuccess] = useState<string | null>(null);
   const [categoryToDelete, setCategoryToDelete] = useState<ExpenseCategory | null>(null);
   const [isDeletingCategory, setIsDeletingCategory] = useState<boolean>(false);
+
+  // Searchable Category Options
+  const categoryOptions: SearchableSelectOption[] = useMemo(() => {
+    return categoriesList.map((c) => ({
+      value: c.name,
+      label: c.name,
+      sublabel: c.description || undefined,
+      searchKey: `${c.name} ${c.description || ''}`,
+    }));
+  }, [categoriesList]);
+
+  const categoryFilterOptions: SearchableSelectOption[] = useMemo(() => {
+    return [
+      { value: '', label: 'All Categories' },
+      ...categoriesList.map((c) => ({
+        value: c.name,
+        label: c.name,
+        searchKey: `${c.name} ${c.description || ''}`,
+      })),
+    ];
+  }, [categoriesList]);
 
   const handleMonthChange = (monthStr: string) => {
     setSelectedMonth(monthStr);
@@ -215,20 +237,18 @@ export const Expenses: React.FC = () => {
 
       {/* Filters */}
       <div className="glass-panel p-4 rounded-2xl flex flex-wrap items-center gap-3 text-xs">
-        <div>
+        <div className="w-56">
           <label className="block text-[10px] uppercase font-bold text-slate-400 mb-1">Expense Category</label>
-          <select
+          <SearchableSelect
+            options={categoryFilterOptions}
             value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
-          >
-            <option value="">All Categories</option>
-            {categoriesList.map((c) => (
-              <option key={c.id} value={c.name}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setCategoryFilter(String(val))}
+            placeholder="All Categories"
+            searchPlaceholder="Search category..."
+            size="sm"
+            clearable
+            onClear={() => setCategoryFilter('')}
+          />
         </div>
 
         {/* Month Selection Option */}
@@ -355,18 +375,17 @@ export const Expenses: React.FC = () => {
       >
         <form onSubmit={handleCreate} className="space-y-4 text-xs">
           <div>
-            <label className="block text-slate-700 font-semibold mb-1">Expense Category</label>
-            <select
+            <label className="block text-slate-700 font-semibold mb-1">
+              Expense Category <span className="text-rose-600">*</span>
+            </label>
+            <SearchableSelect
+              options={categoryOptions}
               value={formData.category}
-              onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
-            >
-              {categoriesList.map((c) => (
-                <option key={c.id} value={c.name}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setFormData({ ...formData, category: String(val) })}
+              placeholder="-- Select Expense Category --"
+              searchPlaceholder="Search category name or description..."
+              required
+            />
           </div>
 
           <div>

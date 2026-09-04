@@ -525,7 +525,7 @@ class MemberViewSet(viewsets.ModelViewSet):
             first_name=data['first_name'],
             last_name=data['last_name'],
             phone=data['phone'],
-            email=data.get('email', ''),
+            email=data.get('email') or None,
             dob=data.get('dob'),
             gender=data.get('gender', 'MALE'),
             address=data.get('address', ''),
