@@ -123,6 +123,7 @@ export interface Member {
   address?: string;
   emergency_contact_name?: string;
   emergency_contact_phone?: string;
+  aadhar_number?: string;
   source: string;
   joining_date: string;
   assigned_trainer?: number | null;

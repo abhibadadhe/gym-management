@@ -30,6 +30,7 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
     address: '',
     emergency_contact_name: '',
     emergency_contact_phone: '',
+    aadhar_number: '',
     source: 'WALK_IN',
     joining_date: new Date().toISOString().split('T')[0],
     assigned_trainer_id: '',
@@ -91,8 +92,8 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.full_name.trim() || !formData.phone.trim() || !formData.dob || !formData.gender || !formData.address.trim() || !formData.emergency_contact_phone.trim() || !formData.plan_id) {
-      setErrorMsg('Please fill in all mandatory fields: Full Name, Phone number, DOB, Gender, Address, Emergency contact no, and Plan.');
+    if (!formData.full_name.trim() || !formData.phone.trim() || !formData.dob || !formData.gender || !formData.address.trim() || !formData.plan_id) {
+      setErrorMsg('Please fill in all mandatory fields: Full Name, Phone number, DOB, Gender, Address, and Plan.');
       return;
     }
 
@@ -101,8 +102,14 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
       return;
     }
 
-    if (formData.emergency_contact_phone.trim().length < 10) {
+    if (formData.emergency_contact_phone.trim() && formData.emergency_contact_phone.trim().length < 10) {
       setErrorMsg('Please enter a valid 10-digit emergency contact phone number.');
+      return;
+    }
+
+    const rawAadhar = formData.aadhar_number.replace(/\s/g, '');
+    if (rawAadhar && rawAadhar.length !== 12) {
+      setErrorMsg('Please enter a valid 12-digit Aadhaar number, or leave it blank.');
       return;
     }
 
@@ -117,6 +124,7 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
         gender: formData.gender,
         dob: formData.dob,
         address: formData.address.trim(),
+        aadhar_number: formData.aadhar_number.trim(),
         emergency_contact_name: formData.emergency_contact_name.trim() || 'Emergency Contact',
         emergency_contact_phone: formData.emergency_contact_phone.trim(),
         source: formData.source,
@@ -315,7 +323,7 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="sachin.j@gmail.com (optional)"
+                  placeholder="sachin.j@gmail.com"
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white"
                 />
               </div>
@@ -349,6 +357,24 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
                 </select>
               </div>
 
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Aadhaar Card No. <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={formData.aadhar_number}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/[^\d]/g, '').slice(0, 12);
+                    const formatted = raw.replace(/(\d{4})(?=\d)/g, '$1 ');
+                    setFormData({ ...formData, aadhar_number: formatted });
+                  }}
+                  placeholder="1234 5678 9012"
+                  maxLength={14}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white"
+                />
+              </div>
+
               <div className="sm:col-span-2">
                 <label className="block text-slate-700 font-semibold mb-1">
                   Residential Address (Sinnar / Area) <span className="text-rose-600">*</span>
@@ -365,7 +391,7 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
 
               <div>
                 <label className="block text-slate-700 font-semibold mb-1">
-                  Emergency Contact Phone <span className="text-rose-600">*</span>
+                  Emergency Contact Phone <span className="text-slate-400 font-normal">(Optional)</span>
                 </label>
                 <input
                   type="tel"
@@ -374,7 +400,6 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
                   placeholder="9822000000"
                   maxLength={10}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:border-orange-500 focus:bg-white"
-                  required
                 />
               </div>
 

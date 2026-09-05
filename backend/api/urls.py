@@ -8,7 +8,7 @@ from .views import (
     DashboardStatsView, MemberViewSet, MembershipPlanViewSet,
     PaymentViewSet, AttendanceViewSet, TrainerViewSet,
     WorkoutPlanViewSet, ExpenseViewSet, ExpenseCategoryViewSet, FinancialSummaryView,
-    ReportsView, AuditLogViewSet, DatabaseBackupView,
+    ReportsView, AuditLogViewSet, DatabaseBackupView, ResetSystemDataView,
     SupplementCategoryViewSet, SupplementProductViewSet, SupplementSaleViewSet,
     PublicReceiptPdfView, PublicInvoicePdfView
 )
@@ -44,6 +44,7 @@ urlpatterns = [
     path('financials/', FinancialSummaryView.as_view(), name='financial_summary'),
     path('reports/', ReportsView.as_view(), name='reports'),
     path('backup/', DatabaseBackupView.as_view(), name='database_backup'),
+    path('system/reset-data/', ResetSystemDataView.as_view(), name='reset_system_data'),
 
     # Public Receipt & Invoice PDF endpoints (accessible by members via WhatsApp)
     path('public/receipts/<str:receipt_number>/pdf/', PublicReceiptPdfView.as_view(), name='public_receipt_pdf'),

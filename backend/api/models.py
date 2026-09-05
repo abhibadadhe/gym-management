@@ -105,6 +105,7 @@ class Member(models.Model):
     photo = models.ImageField(upload_to='members/', blank=True, null=True)
     emergency_contact_name = models.CharField(max_length=100, blank=True)
     emergency_contact_phone = models.CharField(max_length=20, blank=True)
+    aadhar_number = models.CharField(max_length=20, blank=True, default='')
     source = models.CharField(max_length=30, choices=SOURCE_CHOICES, default='WALK_IN')
     joining_date = models.DateField(default=date.today)
     assigned_trainer = models.ForeignKey(Trainer, on_delete=models.SET_NULL, null=True, blank=True, related_name='members')

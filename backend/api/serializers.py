@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+import re
 from datetime import date, timedelta
 from decimal import Decimal
 from .models import (
@@ -107,7 +108,7 @@ class MemberListSerializer(serializers.ModelSerializer):
         model = Member
         fields = [
             'id', 'member_id', 'first_name', 'last_name', 'full_name',
-            'phone', 'email', 'gender', 'dob', 'photo', 'source',
+            'phone', 'email', 'aadhar_number', 'gender', 'dob', 'photo', 'source',
             'joining_date', 'assigned_trainer', 'trainer_name',
             'qr_token', 'is_active', 'membership_status', 'days_remaining',
             'current_plan', 'start_date', 'expiry_date', 'pending_amount',
@@ -265,7 +266,8 @@ class AddMemberWithMembershipSerializer(serializers.Serializer):
     gender = serializers.ChoiceField(choices=Member.GENDER_CHOICES, required=True)
     address = serializers.CharField(required=True)
     emergency_contact_name = serializers.CharField(required=False, allow_blank=True)
-    emergency_contact_phone = serializers.CharField(max_length=20, required=True)
+    emergency_contact_phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    aadhar_number = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')
     source = serializers.ChoiceField(choices=Member.SOURCE_CHOICES, default='WALK_IN', required=False)
     joining_date = serializers.DateField(default=date.today, required=False)
     assigned_trainer_id = serializers.IntegerField(required=False, allow_null=True)
@@ -299,6 +301,16 @@ class AddMemberWithMembershipSerializer(serializers.Serializer):
             raise serializers.ValidationError(f"Email address '{cleaned}' is already registered with another member.")
         return cleaned
 
+    def validate_aadhar_number(self, value):
+        if not value:
+            return ''
+        cleaned = re.sub(r'[\s\-]', '', str(value).strip())
+        if not cleaned:
+            return ''
+        if not cleaned.isdigit() or len(cleaned) != 12:
+            raise serializers.ValidationError("Aadhaar number must be a valid 12-digit number.")
+        return f"{cleaned[:4]} {cleaned[4:8]} {cleaned[8:]}"
+
     def validate(self, attrs):
         full_name = attrs.get('full_name', '').strip()
         first_name = attrs.get('first_name', '').strip()
@@ -322,7 +334,7 @@ class MemberUpdateSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'member_id', 'full_name', 'first_name', 'last_name',
             'phone', 'email', 'gender', 'dob', 'address', 'photo',
-            'emergency_contact_name', 'emergency_contact_phone',
+            'emergency_contact_name', 'emergency_contact_phone', 'aadhar_number',
             'source', 'joining_date', 'assigned_trainer', 'notes', 'is_active'
         ]
         read_only_fields = ['id', 'member_id']
@@ -345,6 +357,16 @@ class MemberUpdateSerializer(serializers.ModelSerializer):
         if instance_id and Member.objects.filter(email__iexact=cleaned).exclude(id=instance_id).exists():
             raise serializers.ValidationError(f"Email address '{cleaned}' is already registered with another member.")
         return cleaned
+
+    def validate_aadhar_number(self, value):
+        if not value:
+            return ''
+        cleaned = re.sub(r'[\s\-]', '', str(value).strip())
+        if not cleaned:
+            return ''
+        if not cleaned.isdigit() or len(cleaned) != 12:
+            raise serializers.ValidationError("Aadhaar number must be a valid 12-digit number.")
+        return f"{cleaned[:4]} {cleaned[4:8]} {cleaned[8:]}"
 
     def update(self, instance, validated_data):
         full_name = validated_data.pop('full_name', None)

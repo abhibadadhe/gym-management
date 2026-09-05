@@ -283,11 +283,10 @@ export const Expenses: React.FC = () => {
               const mStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
               handleMonthChange(mStr);
             }}
-            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${
-              selectedMonth === `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
+            className={`px-3 py-2 rounded-xl text-xs font-bold transition-all ${selectedMonth === `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
                 ? 'bg-orange-500 text-white shadow-sm'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-600'
-            }`}
+              }`}
           >
             This Month
           </button>
@@ -396,7 +395,7 @@ export const Expenses: React.FC = () => {
               type="text"
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              placeholder="e.g. MSEDCL Electricity Bill, repairs, etc. (Optional)"
+              placeholder="e.g. MSEDCL Electricity Bill, repairs, etc."
               className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
             />
           </div>

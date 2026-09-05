@@ -51,6 +51,7 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
     address: string;
     emergency_contact_name: string;
     emergency_contact_phone: string;
+    aadhar_number: string;
     notes: string;
   }>({
     full_name: '',
@@ -61,6 +62,7 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
     address: '',
     emergency_contact_name: '',
     emergency_contact_phone: '',
+    aadhar_number: '',
     notes: '',
   });
 
@@ -75,6 +77,7 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
       address: member.address || '',
       emergency_contact_name: member.emergency_contact_name || '',
       emergency_contact_phone: member.emergency_contact_phone || '',
+      aadhar_number: member.aadhar_number || '',
       notes: member.notes || '',
     });
     setEditError(null);
@@ -84,8 +87,19 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!member) return;
-    if (!editForm.full_name.trim() || !editForm.phone.trim() || !editForm.dob || !editForm.gender || !editForm.address.trim() || !editForm.emergency_contact_phone.trim()) {
-      setEditError('Please fill in all compulsory fields (Full Name, Phone, DOB, Gender, Address, Emergency Phone).');
+    if (!editForm.full_name.trim() || !editForm.phone.trim() || !editForm.dob || !editForm.gender || !editForm.address.trim()) {
+      setEditError('Please fill in all compulsory fields (Full Name, Phone, DOB, Gender, Address).');
+      return;
+    }
+
+    if (editForm.emergency_contact_phone.trim() && editForm.emergency_contact_phone.trim().length < 10) {
+      setEditError('Please enter a valid 10-digit emergency contact phone number.');
+      return;
+    }
+
+    const rawAadhar = editForm.aadhar_number.replace(/\s/g, '');
+    if (rawAadhar && rawAadhar.length !== 12) {
+      setEditError('Please enter a valid 12-digit Aadhaar number, or leave it blank.');
       return;
     }
 
@@ -99,6 +113,7 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
         dob: editForm.dob,
         gender: editForm.gender,
         address: editForm.address.trim(),
+        aadhar_number: editForm.aadhar_number.trim(),
         emergency_contact_name: editForm.emergency_contact_name.trim() || 'Emergency Contact',
         emergency_contact_phone: editForm.emergency_contact_phone.trim(),
         notes: editForm.notes.trim(),
@@ -356,6 +371,12 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
                 <span>Residential Address:</span>
                 <span className="font-semibold text-slate-800">{member.address || 'Sinnar'}</span>
               </div>
+              {member.aadhar_number && (
+                <div className="flex justify-between py-1 border-b border-slate-50">
+                  <span>Aadhaar Number:</span>
+                  <span className="font-semibold text-slate-800 font-mono">{member.aadhar_number}</span>
+                </div>
+              )}
               <div className="flex justify-between py-1 border-b border-slate-50">
                 <span>Emergency Contact:</span>
                 <span className="font-semibold text-slate-800">
@@ -558,7 +579,7 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
                 type="email"
                 value={editForm.email}
                 onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                placeholder="e.g. sachin.j@gmail.com (optional)"
+                placeholder="e.g. sachin.j@gmail.com"
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
               />
             </div>
@@ -607,14 +628,14 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
 
             <div>
               <label className="block text-slate-700 font-semibold mb-1">
-                Emergency Contact Phone <span className="text-rose-600">*</span>
+                Emergency Contact Phone <span className="text-slate-400 font-normal">(Optional)</span>
               </label>
               <input
                 type="tel"
                 value={editForm.emergency_contact_phone}
                 onChange={(e) => setEditForm({ ...editForm, emergency_contact_phone: e.target.value })}
+                placeholder="9822000000"
                 maxLength={10}
-                required
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono focus:outline-none focus:border-orange-500"
               />
             </div>
@@ -629,6 +650,24 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
                 onChange={(e) => setEditForm({ ...editForm, emergency_contact_name: e.target.value })}
                 placeholder="Father / Spouse"
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+              />
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-slate-700 font-semibold mb-1">
+                Aadhaar Card No. <span className="text-slate-400 font-normal">(Optional)</span>
+              </label>
+              <input
+                type="text"
+                value={editForm.aadhar_number}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^\d]/g, '').slice(0, 12);
+                  const formatted = raw.replace(/(\d{4})(?=\d)/g, '$1 ');
+                  setEditForm({ ...editForm, aadhar_number: formatted });
+                }}
+                placeholder="1234 5678 9012"
+                maxLength={14}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono focus:outline-none focus:border-orange-500"
               />
             </div>
 
@@ -677,7 +716,7 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
               <span>Are you sure you want to delete this member?</span>
             </div>
             <p className="text-[11px] text-rose-700 pl-7">
-              This will remove <strong>{member.full_name}</strong> ({member.member_id}) from the active registry. All attendance records and historical payments will remain preserved in audit logs.
+              This will remove <strong>{member.full_name}</strong> ({member.member_id}) from the active registry. All historical payments will remain preserved in audit logs.
             </p>
           </div>
 

@@ -7,6 +7,7 @@ from decimal import Decimal
 from datetime import date, datetime, timedelta
 from dotenv import load_dotenv
 from django.conf import settings
+from django.db import transaction
 from django.db.models import Sum, Count, Q, F
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
@@ -693,6 +694,7 @@ class MemberViewSet(viewsets.ModelViewSet):
             address=data.get('address', ''),
             emergency_contact_name=data.get('emergency_contact_name', ''),
             emergency_contact_phone=data.get('emergency_contact_phone', ''),
+            aadhar_number=data.get('aadhar_number', ''),
             source=data.get('source', 'WALK_IN'),
             joining_date=data.get('joining_date', date.today()),
             assigned_trainer_id=data.get('assigned_trainer_id'),
@@ -1493,6 +1495,77 @@ class DatabaseBackupView(APIView):
         }
         log_audit(request.user, 'BACKUP_CREATED', 'SYSTEM', 0, "Generated system database backup.")
         return JsonResponse(data, safe=False)
+
+
+class ResetSystemDataView(APIView):
+    permission_classes = [IsAdminUserRole]
+
+    def post(self, request):
+        """
+        Danger Zone: Complete factory reset of operational data (members, subscriptions,
+        payments, attendance, expenses, supplement sales) while preserving Admin accounts & Gym settings.
+        """
+        confirmation = str(request.data.get('confirmation', '')).strip()
+        if confirmation != 'RESET ALL DATA':
+            return Response(
+                {"error": "Confirmation phrase mismatch. Please type 'RESET ALL DATA' exactly."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        password = request.data.get('password', '')
+        if not password or not request.user.check_password(password):
+            return Response(
+                {"error": "Incorrect admin password. Action not authorized."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            # 1. Clear operational, transactional, member & supplement records
+            Payment.objects.all().delete()
+            Attendance.objects.all().delete()
+            WorkoutExercise.objects.all().delete()
+            WorkoutPlan.objects.all().delete()
+            MemberMembership.objects.all().delete()
+            Member.objects.all().delete()
+            Expense.objects.all().delete()
+            SupplementSaleItem.objects.all().delete()
+            SupplementSale.objects.all().delete()
+            SupplementProduct.objects.all().delete()
+            Trainer.objects.all().delete()
+            PasswordResetOTP.objects.all().delete()
+
+            # (Membership plans, admin accounts, and gym settings are preserved)
+
+            # Ensure default supplement categories exist
+            categories = [
+                ("Whey Protein", "Whey isolate, concentrate, and blend protein powders"),
+                ("Creatine", "Micronized & monohydrate creatine formulas"),
+                ("Pre-Workout", "Energy boosters, pump formulas, and endurance powders"),
+                ("BCAA & EAA", "Branch-chain and essential amino acids for recovery"),
+                ("Mass Gainer", "High-calorie muscle mass and bulking formulas"),
+                ("Vitamins & Health", "Daily multivitamins, fish oil omega-3, and joint support"),
+                ("Peanut Butter & Snacks", "High-protein peanut butter, bars, and oats"),
+                ("Shakers & Gear", "Gym shakers, lifting straps, and accessories"),
+            ]
+            for cat_name, desc in categories:
+                SupplementCategory.objects.get_or_create(name=cat_name, defaults={'description': desc})
+
+            # Clear older audit logs and create a clean event
+            AuditLog.objects.all().delete()
+            admin_label = f"{request.user.username} ({request.user.get_full_name() or 'Admin'})"
+            log_audit(
+                request.user,
+                'SYSTEM_RESET',
+                'SYSTEM',
+                0,
+                f"Complete software factory reset executed by {admin_label}. Operational and supplements data reset; membership plans preserved."
+            )
+
+        return Response({
+            "success": True,
+            "message": "All software data and supplements have been reset. Membership plans and admin account are preserved.",
+            "timestamp": timezone.now().isoformat()
+        }, status=status.HTTP_200_OK)
 
 
 # ============================================================================

@@ -328,5 +328,15 @@ export const api = {
     const res = await apiClient.get('/supplements/sales/summary/');
     return res.data;
   },
+  resetSystemData: async (data: {
+    confirmation: string;
+    password?: string;
+    reset_plans?: boolean;
+    reset_products?: boolean;
+    reset_trainers?: boolean;
+  }) => {
+    const res = await apiClient.post('/system/reset-data/', data);
+    return res.data;
+  },
 };
 

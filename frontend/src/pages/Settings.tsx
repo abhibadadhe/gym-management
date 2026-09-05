@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Settings as SettingsIcon, Save, Database, Download,
   CheckCircle2, FileSpreadsheet, Printer, Dumbbell, RefreshCw,
-  Receipt, Users, CreditCard, Flame, ShieldCheck, Clock
+  Receipt, Users, CreditCard, Flame, ShieldCheck, Clock,
+  AlertTriangle, Trash2, ShieldAlert, KeyRound, AlertOctagon
 } from 'lucide-react';
 import { GymSettings, Member, Payment, Expense, MembershipPlan, SupplementSale } from '../types';
 import { api } from '../services/api';
@@ -36,6 +37,13 @@ export const Settings: React.FC = () => {
     supplementSales: SupplementSale[];
   } | null>(null);
 
+  // Danger Zone State
+  const [isResetModalOpen, setIsResetModalOpen] = useState<boolean>(false);
+  const [confirmText, setConfirmText] = useState<string>('');
+  const [adminPassword, setAdminPassword] = useState<string>('');
+  const [isResetting, setIsResetting] = useState<boolean>(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+
   useEffect(() => {
     if (gym) {
       setFormData(gym);
@@ -57,6 +65,35 @@ export const Settings: React.FC = () => {
       showToast('Failed to update gym settings.', 'error');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleExecuteResetData = async () => {
+    if (confirmText.trim() !== 'RESET ALL DATA') {
+      setResetError("Please type 'RESET ALL DATA' exactly.");
+      return;
+    }
+    if (!adminPassword.trim()) {
+      setResetError("Please enter your admin password.");
+      return;
+    }
+    setIsResetting(true);
+    setResetError(null);
+    try {
+      await api.resetSystemData({
+        confirmation: 'RESET ALL DATA',
+        password: adminPassword,
+      });
+      setIsResetModalOpen(false);
+      showToast('All software operational data has been successfully reset.', 'success');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1200);
+    } catch (err: any) {
+      const msg = err.response?.data?.error || err.response?.data?.detail || 'Failed to reset data. Please check your admin password.';
+      setResetError(msg);
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -676,6 +713,182 @@ export const Settings: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Danger Zone: Factory Reset All Software Data */}
+      <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-rose-200 bg-gradient-to-br from-rose-50/50 via-white to-orange-50/30 shadow-xs space-y-5 no-print">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-rose-100 pb-5">
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-100/80 text-rose-700 text-xs font-bold uppercase tracking-wider mb-1">
+              <ShieldAlert className="w-3.5 h-3.5" />
+              Danger Zone • Irreversible Action
+            </div>
+            <h3 className="text-base font-bold text-slate-900 font-heading flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-rose-600" />
+              Reset All Software Data
+            </h3>
+            <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">
+              Permanently wipe all operational data including members, membership subscriptions, fee payment receipts, operating expenses, and supplement sale invoices.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              setConfirmText('');
+              setAdminPassword('');
+              setResetError(null);
+              setIsResetModalOpen(true);
+            }}
+            className="py-3 px-5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold text-xs rounded-2xl shadow-lg shadow-rose-600/25 hover:shadow-rose-600/35 transition-all flex items-center justify-center gap-2 shrink-0 cursor-pointer"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>Reset All Data</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+          <div className="p-3.5 rounded-2xl bg-white border border-rose-100 shadow-2xs space-y-1">
+            <span className="font-bold text-slate-900 flex items-center gap-1.5 text-rose-700">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> What is Preserved
+            </span>
+            <p className="text-[11px] text-slate-500 leading-snug">
+              Membership plans, admin & owner login credentials, and gym profile settings remain completely safe.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-white border border-rose-100 shadow-2xs space-y-1">
+            <span className="font-bold text-slate-900 flex items-center gap-1.5 text-rose-700">
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" /> What is Cleared
+            </span>
+            <p className="text-[11px] text-slate-500 leading-snug">
+              All member profiles, payments, check-ins, expenses, and supplements store data (products & sales).
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-white border border-rose-100 shadow-2xs space-y-1">
+            <span className="font-bold text-slate-900 flex items-center gap-1.5 text-rose-700">
+              <Database className="w-3.5 h-3.5 text-blue-600" /> Safety Recommendation
+            </span>
+            <p className="text-[11px] text-slate-500 leading-snug">
+              Always download an Excel / CSV backup above prior to running a database reset.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Safe Confirmation Modal */}
+      {isResetModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-fade-in no-print">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-rose-200 space-y-5 animate-scale-up max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertOctagon className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h4 className="text-lg font-black text-slate-900 font-heading">
+                  Confirm Software Factory Reset
+                </h4>
+                <p className="text-xs text-rose-600 font-semibold">
+                  Warning: This action is permanent and completely irreversible!
+                </p>
+              </div>
+            </div>
+
+            {/* Backup Reminder Banner */}
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between gap-3 text-xs">
+              <div className="text-amber-800">
+                <span className="font-bold block">Need a safety backup first?</span>
+                <span className="text-[11px] text-amber-700">Download Excel copy before resetting.</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleDownloadExcelBackup}
+                disabled={isExportingExcel}
+                className="py-1.5 px-3 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[11px] rounded-xl flex items-center gap-1.5 shrink-0 transition-all cursor-pointer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>{isExportingExcel ? 'Saving...' : 'Backup Now'}</span>
+              </button>
+            </div>
+
+            {/* Scope of Reset Note */}
+            {/* <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-1.5 text-xs">
+              <span className="font-bold text-slate-800 block">Scope of Reset:</span>
+              <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-600">
+                <li><strong className="text-rose-600">Will be wiped:</strong> All members, fee payments, attendance check-ins, operating expenses, and all supplements store data (products & sales).</li>
+                <li><strong className="text-emerald-600">Will remain intact:</strong> All Membership Plans, Admin login account, and gym settings.</li>
+              </ul>
+            </div> */}
+
+            {/* Confirmation verification inputs */}
+            <div className="space-y-3 pt-2 border-t border-slate-100">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Type <span className="font-mono text-rose-600 select-all bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">RESET ALL DATA</span> to confirm:
+                </label>
+                <input
+                  type="text"
+                  value={confirmText}
+                  onChange={(e) => setConfirmText(e.target.value)}
+                  placeholder="RESET ALL DATA"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 font-mono text-sm focus:outline-none focus:border-rose-500 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-slate-500" />
+                  Enter Current Admin Password:
+                </label>
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:outline-none focus:border-rose-500 focus:bg-white"
+                />
+              </div>
+
+              {resetError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl font-medium">
+                  {resetError}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsResetModalOpen(false)}
+                disabled={isResetting}
+                className="py-2.5 px-4 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteResetData}
+                disabled={confirmText.trim() !== 'RESET ALL DATA' || !adminPassword.trim() || isResetting}
+                className="py-2.5 px-5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-md shadow-rose-600/25 transition-all flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {isResetting ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>Wiping Data...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Confirm & Reset All Data</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

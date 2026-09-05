@@ -335,7 +335,7 @@ export const Members: React.FC<MembersProps> = ({
               <span>Are you sure you want to delete this member?</span>
             </div>
             <p className="text-[11px] text-rose-700 pl-7">
-              This will remove <strong>{memberToDelete?.full_name}</strong> ({memberToDelete?.member_id}) from the active registry. All attendance records and historical payments will remain preserved in audit logs.
+              This will remove <strong>{memberToDelete?.full_name}</strong> ({memberToDelete?.member_id}) from the active registry. All historical payments will remain preserved in audit logs.
             </p>
           </div>
 
@@ -363,11 +363,10 @@ export const Members: React.FC<MembersProps> = ({
       {/* Toast Notification */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-5 duration-300">
-          <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl border text-xs font-bold ${
-            toast.type === 'success'
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl border text-xs font-bold ${toast.type === 'success'
               ? 'bg-slate-900 text-white border-slate-700'
               : 'bg-rose-600 text-white border-rose-700'
-          }`}>
+            }`}>
             {toast.type === 'success' ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
             ) : (

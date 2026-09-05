@@ -92,7 +92,7 @@ export const Reports: React.FC = () => {
         <div>
           <h2 className="text-2xl font-black text-slate-900 font-heading tracking-tight">Reports & Business Analytics</h2>
           <p className="text-xs text-slate-500">
-            Generate and export structured data sheets for members, revenue collections, attendance, and P&L.
+            Generate and export structured data sheets for members, revenue collections, and P&L.
           </p>
         </div>
 
