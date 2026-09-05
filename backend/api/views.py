@@ -681,6 +681,12 @@ class MemberViewSet(viewsets.ModelViewSet):
         start_date = data.get('start_date', date.today())
         end_date = start_date + timedelta(days=plan.duration_days)
 
+        raw_joining_date = data.get('joining_date') or request.data.get('joining_date')
+        if not raw_joining_date or (str(raw_joining_date) == str(date.today()) and start_date != date.today()):
+            effective_joining_date = start_date
+        else:
+            effective_joining_date = raw_joining_date
+
         # 1. Create Member
         member_id = Member.generate_member_id()
         member = Member.objects.create(
@@ -696,7 +702,7 @@ class MemberViewSet(viewsets.ModelViewSet):
             emergency_contact_phone=data.get('emergency_contact_phone', ''),
             aadhar_number=data.get('aadhar_number', ''),
             source=data.get('source', 'WALK_IN'),
-            joining_date=data.get('joining_date', date.today()),
+            joining_date=effective_joining_date,
             assigned_trainer_id=data.get('assigned_trainer_id'),
             notes=data.get('notes', ''),
         )
@@ -727,6 +733,19 @@ class MemberViewSet(viewsets.ModelViewSet):
         payment = None
         if paid_amount > 0:
             receipt_no = Payment.generate_receipt_number()
+            raw_payment_date = data.get('payment_date') or request.data.get('payment_date') or start_date or data.get('joining_date')
+            parsed_payment_date = date.today()
+            if raw_payment_date:
+                if isinstance(raw_payment_date, str):
+                    try:
+                        parsed_payment_date = datetime.strptime(raw_payment_date.split('T')[0], '%Y-%m-%d').date()
+                    except Exception:
+                        parsed_payment_date = date.today()
+                elif isinstance(raw_payment_date, datetime):
+                    parsed_payment_date = raw_payment_date.date()
+                elif isinstance(raw_payment_date, date):
+                    parsed_payment_date = raw_payment_date
+
             payment = Payment.objects.create(
                 receipt_number=receipt_no,
                 member=member,
@@ -734,7 +753,7 @@ class MemberViewSet(viewsets.ModelViewSet):
                 amount=paid_amount,
                 payment_method=data.get('payment_method', 'UPI'),
                 transaction_ref=data.get('transaction_ref', ''),
-                payment_date=date.today(),
+                payment_date=parsed_payment_date,
                 notes="Initial membership registration payment",
                 received_by=request.user,
             )
@@ -800,6 +819,19 @@ class MemberViewSet(viewsets.ModelViewSet):
         payment = None
         if paid_amount > 0:
             receipt_no = Payment.generate_receipt_number()
+            raw_payment_date = data.get('payment_date') or request.data.get('payment_date') or new_start_date
+            parsed_payment_date = date.today()
+            if raw_payment_date:
+                if isinstance(raw_payment_date, str):
+                    try:
+                        parsed_payment_date = datetime.strptime(raw_payment_date.split('T')[0], '%Y-%m-%d').date()
+                    except Exception:
+                        parsed_payment_date = date.today()
+                elif isinstance(raw_payment_date, datetime):
+                    parsed_payment_date = raw_payment_date.date()
+                elif isinstance(raw_payment_date, date):
+                    parsed_payment_date = raw_payment_date
+
             payment = Payment.objects.create(
                 receipt_number=receipt_no,
                 member=member,
@@ -807,7 +839,7 @@ class MemberViewSet(viewsets.ModelViewSet):
                 amount=paid_amount,
                 payment_method=data.get('payment_method', 'UPI'),
                 transaction_ref=data.get('transaction_ref', ''),
-                payment_date=date.today(),
+                payment_date=parsed_payment_date,
                 notes=f"Renewal payment for {plan.name}",
                 received_by=request.user,
             )
@@ -1667,9 +1699,8 @@ class SupplementSaleViewSet(viewsets.ModelViewSet):
                 'upi_id': settings.upi_id,
             },
             'invoice_number': sale.invoice_number,
-            'sale_date': sale.sale_date.strftime('%d-%b-%Y %I:%M %p'),
+            'sale_date': sale.sale_date.strftime('%d-%b-%Y'),
             'date': sale.sale_date.strftime('%d-%b-%Y'),
-            'time': sale.sale_date.strftime('%I:%M %p'),
             'customer_name': sale.customer_name,
             'customer_phone': sale.customer_phone or "N/A",
             'member_id': sale.member.member_id if sale.member else None,

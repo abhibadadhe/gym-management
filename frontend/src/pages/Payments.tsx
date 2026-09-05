@@ -33,6 +33,7 @@ export const Payments: React.FC<PaymentsProps> = ({
   const [collectTarget, setCollectTarget] = useState<MemberMembership | null>(null);
   const [collectAmount, setCollectAmount] = useState('');
   const [collectMethod, setCollectMethod] = useState('UPI');
+  const [collectDate, setCollectDate] = useState(new Date().toISOString().split('T')[0]);
   const [collectRef, setCollectRef] = useState('');
   const [isCollecting, setIsCollecting] = useState(false);
 
@@ -104,6 +105,7 @@ export const Payments: React.FC<PaymentsProps> = ({
     setCollectTarget(due);
     setCollectAmount(due.pending_amount.toString());
     setCollectMethod('UPI');
+    setCollectDate(new Date().toISOString().split('T')[0]);
     setCollectRef('');
     setIsCollectModalOpen(true);
   };
@@ -120,7 +122,7 @@ export const Payments: React.FC<PaymentsProps> = ({
         amount: Number(collectAmount),
         payment_method: collectMethod,
         transaction_ref: collectRef.trim(),
-        payment_date: new Date().toISOString().split('T')[0],
+        payment_date: collectDate || new Date().toISOString().split('T')[0],
         notes: `Dues clearance payment for ${collectTarget.plan_name}`,
       });
 
@@ -483,6 +485,17 @@ export const Payments: React.FC<PaymentsProps> = ({
               value={collectAmount}
               onChange={(e) => setCollectAmount(e.target.value)}
               className="w-full px-3.5 py-2.5 bg-white border border-orange-400 rounded-xl text-slate-900 font-black text-base font-mono focus:outline-none focus:border-orange-500 shadow-sm"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-slate-700 font-semibold mb-1">Payment Date</label>
+            <input
+              type="date"
+              value={collectDate}
+              onChange={(e) => setCollectDate(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white font-bold"
               required
             />
           </div>

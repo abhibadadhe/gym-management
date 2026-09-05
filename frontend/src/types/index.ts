@@ -43,6 +43,7 @@ export interface Trainer {
 export interface MembershipPlan {
   id: number;
   name: string;
+  plan_type?: 'WEIGHT_TRAINING' | 'CARDIO' | 'GENERAL';
   duration_days: number;
   price: string | number;
   description: string;
@@ -332,6 +333,7 @@ export interface SupplementProduct {
   category_name?: string;
   flavor?: string;
   weight_or_servings?: string;
+  sku_barcode?: string;
   cost_price: number | string;
   selling_price: number | string;
   stock_quantity: number;
@@ -396,7 +398,7 @@ export interface SupplementReceiptData {
   invoice_number: string;
   sale_date: string;
   date: string;
-  time: string;
+  time?: string;
   customer_name: string;
   customer_phone: string;
   member_id?: string | null;

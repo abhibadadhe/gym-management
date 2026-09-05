@@ -54,7 +54,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
         `Dear *${receipt.customer_name}*,\n\n` +
         `Thank you for your supplement purchase at *${gymName}*! Here are your invoice details:\n\n` +
         `📄 *Invoice No:* ${receipt.invoice_number}\n` +
-        `📅 *Date:* ${receipt.sale_date}\n` +
+        `📅 *Date:* ${receipt.date || receipt.sale_date?.split(' ')[0] || receipt.sale_date}\n` +
         `💳 *Payment Mode:* ${paymentMethod}\n\n` +
         `*Purchased Items:*\n${itemsText}\n\n` +
         `💰 *Total Amount Paid:* ₹${receipt.final_amount.toLocaleString('en-IN')}\n` +
@@ -305,7 +305,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                   color: '#64748b',
                   marginTop: '2px',
                 }}>
-                  Date: {receipt.sale_date || receipt.date}
+                  Date: {receipt.date || (receipt.sale_date ? receipt.sale_date.split(' ')[0] : '')}
                 </div>
               </div>
             </div>

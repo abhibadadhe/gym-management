@@ -68,7 +68,14 @@ class Trainer(models.Model):
 
 
 class MembershipPlan(models.Model):
+    PLAN_TYPE_CHOICES = [
+        ('WEIGHT_TRAINING', 'Weight Training'),
+        ('CARDIO', 'Weight Training + Cardio'),
+        ('GENERAL', 'General'),
+    ]
+
     name = models.CharField(max_length=100)
+    plan_type = models.CharField(max_length=30, choices=PLAN_TYPE_CHOICES, default='WEIGHT_TRAINING')
     duration_days = models.PositiveIntegerField(help_text="Duration in days (e.g. 30, 90, 180, 365)")
     price = models.DecimalField(max_digits=10, decimal_places=2)
     description = models.TextField(blank=True)
@@ -248,7 +255,7 @@ class Payment(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['-payment_date', '-created_at']
 
     def __str__(self):
         return f"{self.receipt_number} - ₹{self.amount} ({self.member.full_name})"

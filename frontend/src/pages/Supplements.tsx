@@ -88,11 +88,21 @@ export const Supplements: React.FC = () => {
   const [restockQty, setRestockQty] = useState<string>('5');
   const [restockCost, setRestockCost] = useState<string>('');
 
+  // Helper for today's local date in YYYY-MM-DD
+  const getTodayDateString = () => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
   // Form States: New Sale (POS)
   const [customerType, setCustomerType] = useState<'member' | 'walk_in'>('member');
   const [selectedMemberId, setSelectedMemberId] = useState<string>('');
   const [walkInName, setWalkInName] = useState<string>('');
   const [walkInPhone, setWalkInPhone] = useState<string>('');
+  const [saleDate, setSaleDate] = useState<string>(getTodayDateString());
   const [saleItems, setSaleItems] = useState<{ productId: number; quantity: number }[]>([
     { productId: 0, quantity: 1 }
   ]);
@@ -171,7 +181,7 @@ export const Supplements: React.FC = () => {
       badge: p.stock_quantity === 0 ? 'Out of Stock' : `Stock: ${p.stock_quantity}`,
       badgeColor: p.stock_quantity === 0 ? 'rose' : p.stock_quantity <= 5 ? 'amber' : 'emerald',
       disabled: p.stock_quantity === 0,
-      searchKey: `${p.name} ${p.brand} ${p.flavor || ''} ${p.sku_barcode || ''}`,
+      searchKey: `${p.name} ${p.brand} ${p.flavor || ''} ${p.sku_barcode || p.weight_or_servings || ''}`,
     }));
   }, [products]);
 
@@ -316,6 +326,18 @@ export const Supplements: React.FC = () => {
       }
     }
 
+    // Format saleDate for backend
+    const todayStr = getTodayDateString();
+    let formattedSaleDate: string;
+    if (!saleDate || saleDate === todayStr) {
+      formattedSaleDate = new Date().toISOString();
+    } else {
+      const now = new Date();
+      const [y, m, d] = saleDate.split('-').map(Number);
+      const customDate = new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds());
+      formattedSaleDate = customDate.toISOString();
+    }
+
     setIsSubmittingSale(true);
     try {
       const payload = {
@@ -324,6 +346,7 @@ export const Supplements: React.FC = () => {
         customer_phone: custPhone,
         discount: parseFloat(discountAmount) || 0,
         payment_method: paymentMethod,
+        sale_date: formattedSaleDate,
         notes: saleNotes,
         items: validItems.map((it) => {
           const prod = products.find((p) => p.id === it.productId);
@@ -392,6 +415,7 @@ export const Supplements: React.FC = () => {
     setSelectedMemberId('');
     setWalkInName('');
     setWalkInPhone('');
+    setSaleDate(getTodayDateString());
     setSaleItems([{ productId: 0, quantity: 1 }]);
     setDiscountAmount('0');
     setPaymentMethod('UPI');
@@ -652,11 +676,10 @@ export const Supplements: React.FC = () => {
             setActiveTab('inventory');
             setShowLowStockOnly(true);
           }}
-          className={`glass-panel p-5 rounded-3xl border shadow-sm space-y-2 cursor-pointer transition-all ${
-            (summary?.low_stock_count || 0) > 0
+          className={`glass-panel p-5 rounded-3xl border shadow-sm space-y-2 cursor-pointer transition-all ${(summary?.low_stock_count || 0) > 0
               ? 'border-rose-200 bg-rose-50/40 hover:bg-rose-50'
               : 'border-slate-200'
-          }`}
+            }`}
         >
           <div className="flex justify-between items-center">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Stock Alerts</span>
@@ -678,11 +701,10 @@ export const Supplements: React.FC = () => {
         <div className="flex border-b border-slate-200 px-6 pt-4 gap-6">
           <button
             onClick={() => setActiveTab('inventory')}
-            className={`pb-4 text-xs font-bold font-heading uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 ${
-              activeTab === 'inventory'
+            className={`pb-4 text-xs font-bold font-heading uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 ${activeTab === 'inventory'
                 ? 'border-orange-600 text-orange-600'
                 : 'border-transparent text-slate-400 hover:text-slate-700'
-            }`}
+              }`}
           >
             <Layers className="w-4 h-4" />
             <span>Store Inventory ({products.length})</span>
@@ -690,11 +712,10 @@ export const Supplements: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('sales')}
-            className={`pb-4 text-xs font-bold font-heading uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 ${
-              activeTab === 'sales'
+            className={`pb-4 text-xs font-bold font-heading uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 ${activeTab === 'sales'
                 ? 'border-orange-600 text-orange-600'
                 : 'border-transparent text-slate-400 hover:text-slate-700'
-            }`}
+              }`}
           >
             <ShoppingBag className="w-4 h-4" />
             <span>Sales History & Invoices ({sales.length})</span>
@@ -733,11 +754,10 @@ export const Supplements: React.FC = () => {
 
                 <button
                   onClick={() => setShowLowStockOnly(!showLowStockOnly)}
-                  className={`px-3 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 whitespace-nowrap border ${
-                    showLowStockOnly
+                  className={`px-3 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 whitespace-nowrap border ${showLowStockOnly
                       ? 'bg-rose-100 text-rose-800 border-rose-300'
                       : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
+                    }`}
                 >
                   <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
                   <span>Low Stock Only</span>
@@ -802,13 +822,12 @@ export const Supplements: React.FC = () => {
                           <td className="p-3.5 text-center">
                             <div className="inline-flex items-center gap-1.5">
                               <span
-                                className={`px-2.5 py-1 rounded-full font-black text-[11px] border ${
-                                  isOut
+                                className={`px-2.5 py-1 rounded-full font-black text-[11px] border ${isOut
                                     ? 'bg-rose-100 text-rose-800 border-rose-200'
                                     : isLow
-                                    ? 'bg-amber-100 text-amber-800 border-amber-200'
-                                    : 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                                }`}
+                                      ? 'bg-amber-100 text-amber-800 border-amber-200'
+                                      : 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                  }`}
                               >
                                 {p.stock_quantity} units
                               </span>
@@ -866,7 +885,7 @@ export const Supplements: React.FC = () => {
                 <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
                   <tr>
                     <th className="p-3.5">Invoice #</th>
-                    <th className="p-3.5">Date & Time</th>
+                    <th className="p-3.5">Date</th>
                     <th className="p-3.5">Customer</th>
                     <th className="p-3.5">Items Purchased</th>
                     <th className="p-3.5 text-right">Final Amount</th>
@@ -940,9 +959,9 @@ export const Supplements: React.FC = () => {
 
       {/* MODAL 1: New Supplement POS Sale / Billing */}
       {isNewSaleOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="relative w-full max-w-2xl bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="relative w-full max-w-2xl bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col my-auto">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <ShoppingBag className="w-5 h-5 text-orange-600" />
                 <h3 className="font-bold font-heading text-slate-900 text-base">New Supplement Billing (POS)</h3>
@@ -955,238 +974,262 @@ export const Supplements: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleCreateSale} className="p-6 space-y-5 text-xs">
-              {saleError && (
-                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                  <span>{saleError}</span>
-                </div>
-              )}
-
-              {/* Customer Type Selector */}
-              <div className="space-y-2">
-                <label className="block text-slate-700 font-bold">Select Customer</label>
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setCustomerType('member')}
-                    className={`flex-1 py-2.5 rounded-xl font-bold border transition-all text-center ${
-                      customerType === 'member'
-                        ? 'bg-orange-50 border-orange-500 text-orange-700'
-                        : 'bg-slate-50 border-slate-200 text-slate-600'
-                    }`}
-                  >
-                    Gym Enrolled Member
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCustomerType('walk_in')}
-                    className={`flex-1 py-2.5 rounded-xl font-bold border transition-all text-center ${
-                      customerType === 'walk_in'
-                        ? 'bg-orange-50 border-orange-500 text-orange-700'
-                        : 'bg-slate-50 border-slate-200 text-slate-600'
-                    }`}
-                  >
-                    Walk-in Customer
-                  </button>
-                </div>
-              </div>
-
-              {customerType === 'member' ? (
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">
-                    Select Member <span className="text-rose-600">*</span>
-                  </label>
-                  <SearchableSelect
-                    options={memberSelectOptions}
-                    value={selectedMemberId}
-                    onChange={(val) => setSelectedMemberId(String(val))}
-                    placeholder="-- Search or Choose Member from Registry --"
-                    searchPlaceholder="Search member name, phone (+91), or Member ID..."
-                    required
-                    clearable
-                    onClear={() => setSelectedMemberId('')}
-                  />
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-700 font-bold mb-1">Customer Full Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Rahul Patil"
-                      value={walkInName}
-                      onChange={(e) => setWalkInName(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
-                    />
+            <form onSubmit={handleCreateSale} className="flex-1 flex flex-col min-h-0 overflow-hidden text-xs">
+              <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+                {saleError && (
+                  <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    <span>{saleError}</span>
                   </div>
-                  <div>
-                    <label className="block text-slate-700 font-bold mb-1">Phone Number (Optional)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. 9822012345"
-                      value={walkInPhone}
-                      onChange={(e) => setWalkInPhone(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
-                    />
+                )}
+
+                {/* Customer Type Selector */}
+                <div className="space-y-2">
+                  <label className="block text-slate-700 font-bold">Select Customer</label>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setCustomerType('member')}
+                      className={`flex-1 py-2.5 rounded-xl font-bold border transition-all text-center ${customerType === 'member'
+                          ? 'bg-orange-50 border-orange-500 text-orange-700'
+                          : 'bg-slate-50 border-slate-200 text-slate-600'
+                        }`}
+                    >
+                      Gym Enrolled Member
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCustomerType('walk_in')}
+                      className={`flex-1 py-2.5 rounded-xl font-bold border transition-all text-center ${customerType === 'walk_in'
+                          ? 'bg-orange-50 border-orange-500 text-orange-700'
+                          : 'bg-slate-50 border-slate-200 text-slate-600'
+                        }`}
+                    >
+                      Walk-in Customer
+                    </button>
                   </div>
                 </div>
-              )}
 
-              {/* Product Items Cart Builder */}
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <label className="block text-slate-700 font-bold uppercase tracking-wider text-[10px]">
-                    Products & Quantities
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setSaleItems([...saleItems, { productId: 0, quantity: 1 }])}
-                    className="text-orange-600 hover:text-orange-700 font-bold text-[11px] flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add Another Item</span>
-                  </button>
+                {customerType === 'member' ? (
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">
+                      Select Member <span className="text-rose-600">*</span>
+                    </label>
+                    <SearchableSelect
+                      options={memberSelectOptions}
+                      value={selectedMemberId}
+                      onChange={(val) => setSelectedMemberId(String(val))}
+                      placeholder="-- Search or Choose Member from Registry --"
+                      searchPlaceholder="Search member name, phone (+91), or Member ID..."
+                      required
+                      clearable
+                      onClear={() => setSelectedMemberId('')}
+                    />
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">Customer Full Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Rahul Patil"
+                        value={walkInName}
+                        onChange={(e) => setWalkInName(e.target.value)}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">Phone Number (Optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 9822012345"
+                        value={walkInPhone}
+                        onChange={(e) => setWalkInPhone(e.target.value)}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Product Items Cart Builder */}
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-slate-700 font-bold uppercase tracking-wider text-[10px]">
+                      Products & Quantities
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setSaleItems([...saleItems, { productId: 0, quantity: 1 }])}
+                      className="text-orange-600 hover:text-orange-700 font-bold text-[11px] flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Another Item</span>
+                    </button>
+                  </div>
+
+                  {/* Quick Search & Add Product Bar */}
+                  <div className="p-2.5 rounded-2xl bg-orange-50/60 border border-orange-200/80">
+                    <label className="block text-[10px] uppercase font-bold text-orange-900 mb-1">
+                      + Quick Search & Add Product to Cart
+                    </label>
+                    <SearchableSelect
+                      options={productSelectOptions}
+                      value=""
+                      onChange={(val) => {
+                        const prodId = Number(val);
+                        if (!prodId) return;
+                        const existingIndex = saleItems.findIndex((x) => x.productId === prodId);
+                        if (existingIndex > -1) {
+                          const newItems = [...saleItems];
+                          newItems[existingIndex].quantity += 1;
+                          setSaleItems(newItems);
+                        } else if (saleItems.length === 1 && saleItems[0].productId === 0) {
+                          setSaleItems([{ productId: prodId, quantity: 1 }]);
+                        } else {
+                          setSaleItems([...saleItems, { productId: prodId, quantity: 1 }]);
+                        }
+                      }}
+                      placeholder="Search product name, brand, flavor, or barcode to add..."
+                      searchPlaceholder="Type product name, brand, flavor, or barcode..."
+                      size="sm"
+                    />
+                  </div>
+
+                  <div className="space-y-2.5 max-h-60 overflow-y-auto p-1">
+                    {saleItems.map((item, index) => {
+                      const chosenProduct = products.find((p) => p.id === item.productId);
+
+                      return (
+                        <div key={index} className="flex items-center gap-2 p-2.5 rounded-2xl bg-slate-50 border border-slate-200">
+                          <div className="flex-1">
+                            <SearchableSelect
+                              options={productSelectOptions}
+                              value={item.productId || ''}
+                              onChange={(val) => {
+                                const newItems = [...saleItems];
+                                newItems[index].productId = Number(val) || 0;
+                                setSaleItems(newItems);
+                              }}
+                              placeholder="-- Select Supplement Product --"
+                              searchPlaceholder="Search product by name, brand, flavor..."
+                              required
+                            />
+                          </div>
+
+                          <div className="w-20">
+                            <input
+                              type="number"
+                              min="1"
+                              max={chosenProduct ? chosenProduct.stock_quantity : 99}
+                              value={item.quantity}
+                              onChange={(e) => {
+                                const newItems = [...saleItems];
+                                newItems[index].quantity = parseInt(e.target.value) || 1;
+                                setSaleItems(newItems);
+                              }}
+                              className="w-full px-2.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-xs text-center focus:outline-none focus:border-orange-500 font-bold"
+                              required
+                            />
+                          </div>
+
+                          <div className="w-24 text-right font-mono font-bold text-slate-900 text-xs">
+                            ₹{chosenProduct ? (Number(chosenProduct.selling_price) * item.quantity).toLocaleString('en-IN') : '0'}
+                          </div>
+
+                          {saleItems.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSaleItems(saleItems.filter((_, i) => i !== index));
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                {/* Quick Search & Add Product Bar */}
-                <div className="p-2.5 rounded-2xl bg-orange-50/60 border border-orange-200/80">
-                  <label className="block text-[10px] uppercase font-bold text-orange-900 mb-1">
-                    + Quick Search & Add Product to Cart
-                  </label>
-                  <SearchableSelect
-                    options={productSelectOptions}
-                    value=""
-                    onChange={(val) => {
-                      const prodId = Number(val);
-                      if (!prodId) return;
-                      const existingIndex = saleItems.findIndex((x) => x.productId === prodId);
-                      if (existingIndex > -1) {
-                        const newItems = [...saleItems];
-                        newItems[existingIndex].quantity += 1;
-                        setSaleItems(newItems);
-                      } else if (saleItems.length === 1 && saleItems[0].productId === 0) {
-                        setSaleItems([{ productId: prodId, quantity: 1 }]);
-                      } else {
-                        setSaleItems([...saleItems, { productId: prodId, quantity: 1 }]);
-                      }
-                    }}
-                    placeholder="Search product name, brand, flavor, or barcode to add..."
-                    searchPlaceholder="Type product name, brand, flavor, or barcode..."
-                    size="sm"
-                  />
+                {/* Sale Date, Payment & Discount */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">
+                      Sale Date <span className="text-rose-600">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={saleDate}
+                      onChange={(e) => setSaleDate(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold text-xs"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Payment Method</label>
+                    <select
+                      value={paymentMethod}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold text-xs"
+                    >
+                      <option value="UPI">UPI</option>
+                      <option value="CASH">Cash</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Discount Amount (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={discountAmount}
+                      onChange={(e) => setDiscountAmount(e.target.value)}
+                      placeholder="0"
+                      className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold text-xs"
+                    />
+                  </div>
                 </div>
 
-                <div className="space-y-2.5 max-h-60 overflow-y-auto p-1">
-                  {saleItems.map((item, index) => {
-                    const chosenProduct = products.find((p) => p.id === item.productId);
-
-                    return (
-                      <div key={index} className="flex items-center gap-2 p-2.5 rounded-2xl bg-slate-50 border border-slate-200">
-                        <div className="flex-1">
-                          <SearchableSelect
-                            options={productSelectOptions}
-                            value={item.productId || ''}
-                            onChange={(val) => {
-                              const newItems = [...saleItems];
-                              newItems[index].productId = Number(val) || 0;
-                              setSaleItems(newItems);
-                            }}
-                            placeholder="-- Select Supplement Product --"
-                            searchPlaceholder="Search product by name, brand, flavor..."
-                            required
-                          />
-                        </div>
-
-                        <div className="w-20">
-                          <input
-                            type="number"
-                            min="1"
-                            max={chosenProduct ? chosenProduct.stock_quantity : 99}
-                            value={item.quantity}
-                            onChange={(e) => {
-                              const newItems = [...saleItems];
-                              newItems[index].quantity = parseInt(e.target.value) || 1;
-                              setSaleItems(newItems);
-                            }}
-                            className="w-full px-2.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-900 text-xs text-center focus:outline-none focus:border-orange-500 font-bold"
-                            required
-                          />
-                        </div>
-
-                        <div className="w-24 text-right font-mono font-bold text-slate-900 text-xs">
-                          ₹{chosenProduct ? (Number(chosenProduct.selling_price) * item.quantity).toLocaleString('en-IN') : '0'}
-                        </div>
-
-                        {saleItems.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSaleItems(saleItems.filter((_, i) => i !== index));
-                            }}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Payment & Discount */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Payment Method</label>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
-                  >
-                    <option value="UPI">UPI</option>
-                    <option value="CASH">Cash</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Discount Amount (₹)</label>
+                  <label className="block text-slate-700 font-bold mb-1">Notes / Remarks (Optional)</label>
                   <input
-                    type="number"
-                    min="0"
-                    value={discountAmount}
-                    onChange={(e) => setDiscountAmount(e.target.value)}
-                    placeholder="0"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
+                    type="text"
+                    value={saleNotes}
+                    onChange={(e) => setSaleNotes(e.target.value)}
+                    placeholder="e.g. Complimentary shaker provided, special discount..."
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 text-xs"
                   />
                 </div>
-              </div>
 
-              {/* Grand Total Summary Box */}
-              <div className="p-4 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-orange-700 font-bold uppercase block">Net Amount to Collect</span>
-                  <span className="text-xl font-black text-slate-900 font-heading">
-                    ₹{calculateFinalTotal().toLocaleString('en-IN')}
-                  </span>
-                </div>
-
-                <div className="text-right text-[11px] text-slate-500">
-                  Gross: ₹{calculateGrossTotal().toLocaleString('en-IN')}
-                  {parseFloat(discountAmount) > 0 && (
-                    <span className="block text-orange-600 font-semibold">
-                      Discount: -₹{parseFloat(discountAmount).toLocaleString('en-IN')}
+                {/* Grand Total Summary Box */}
+                <div className="p-4 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-orange-700 font-bold uppercase block">Net Amount to Collect</span>
+                    <span className="text-xl font-black text-slate-900 font-heading">
+                      ₹{calculateFinalTotal().toLocaleString('en-IN')}
                     </span>
-                  )}
+                  </div>
+
+                  <div className="text-right text-[11px] text-slate-500">
+                    Gross: ₹{calculateGrossTotal().toLocaleString('en-IN')}
+                    {parseFloat(discountAmount) > 0 && (
+                      <span className="block text-orange-600 font-semibold">
+                        Discount: -₹{parseFloat(discountAmount).toLocaleString('en-IN')}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
               {/* Actions */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-3 px-6 py-3.5 border-t border-slate-100 bg-slate-50/70 flex-shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsNewSaleOpen(false)}
-                  className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-bold transition-colors"
+                  className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-200 font-bold transition-colors"
                 >
                   Cancel
                 </button>
@@ -1213,9 +1256,9 @@ export const Supplements: React.FC = () => {
 
       {/* MODAL 2: Add New Supplement Product */}
       {isAddProductOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="relative w-full max-w-lg bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="relative w-full max-w-lg bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col my-auto">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <PackagePlus className="w-5 h-5 text-orange-600" />
                 <h3 className="font-bold font-heading text-slate-900 text-base">Add New Supplement Product</h3>
@@ -1228,124 +1271,127 @@ export const Supplements: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleAddProduct} className="p-6 space-y-4 text-xs">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Product Title</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Gold Standard 100% Whey Protein"
-                  value={productForm.name}
-                  onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
+            <form onSubmit={handleAddProduct} className="flex-1 flex flex-col min-h-0 overflow-hidden text-xs">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Brand</label>
+                  <label className="block text-slate-700 font-bold mb-1">Product Title</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Optimum Nutrition"
-                    value={productForm.brand}
-                    onChange={(e) => setProductForm({ ...productForm, brand: e.target.value })}
+                    placeholder="e.g. Gold Standard 100% Whey Protein"
+                    value={productForm.name}
+                    onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Category</label>
-                  <SearchableSelect
-                    options={categorySelectOptions}
-                    value={productForm.category}
-                    onChange={(val) => setProductForm({ ...productForm, category: String(val) })}
-                    placeholder="-- General Category --"
-                    searchPlaceholder="Search category name..."
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Brand</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Optimum Nutrition"
+                      value={productForm.brand}
+                      onChange={(e) => setProductForm({ ...productForm, brand: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Category</label>
+                    <SearchableSelect
+                      options={categorySelectOptions}
+                      value={productForm.category}
+                      onChange={(val) => setProductForm({ ...productForm, category: String(val) })}
+                      placeholder="-- General Category --"
+                      searchPlaceholder="Search category name..."
+                    />
+                  </div>
                 </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Flavor</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Double Rich Chocolate"
+                      value={productForm.flavor}
+                      onChange={(e) => setProductForm({ ...productForm, flavor: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Weight / Servings</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 2 kg / 60 servings"
+                      value={productForm.weight_or_servings}
+                      onChange={(e) => setProductForm({ ...productForm, weight_or_servings: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Cost / Purchase Price (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="e.g. 4500"
+                      value={productForm.cost_price}
+                      onChange={(e) => setProductForm({ ...productForm, cost_price: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Selling / MRP Price (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      required
+                      placeholder="e.g. 5800"
+                      value={productForm.selling_price}
+                      onChange={(e) => setProductForm({ ...productForm, selling_price: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold text-orange-700"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Initial Stock Units</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={productForm.stock_quantity}
+                      onChange={(e) => setProductForm({ ...productForm, stock_quantity: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Low-Stock Alert Level</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={productForm.min_stock_alert}
+                      onChange={(e) => setProductForm({ ...productForm, min_stock_alert: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
+                    />
+                  </div>
+                </div>
+
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Flavor</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Double Rich Chocolate"
-                    value={productForm.flavor}
-                    onChange={(e) => setProductForm({ ...productForm, flavor: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Weight / Servings</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 2 kg / 60 servings"
-                    value={productForm.weight_or_servings}
-                    onChange={(e) => setProductForm({ ...productForm, weight_or_servings: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Cost / Purchase Price (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="e.g. 4500"
-                    value={productForm.cost_price}
-                    onChange={(e) => setProductForm({ ...productForm, cost_price: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Selling / MRP Price (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    required
-                    placeholder="e.g. 5800"
-                    value={productForm.selling_price}
-                    onChange={(e) => setProductForm({ ...productForm, selling_price: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold text-orange-700"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Initial Stock Units</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={productForm.stock_quantity}
-                    onChange={(e) => setProductForm({ ...productForm, stock_quantity: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Low-Stock Alert Level</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={productForm.min_stock_alert}
-                    onChange={(e) => setProductForm({ ...productForm, min_stock_alert: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-3 px-6 py-3.5 border-t border-slate-100 bg-slate-50/70 flex-shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsAddProductOpen(false)}
-                  className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-bold transition-colors"
+                  className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-200 font-bold transition-colors"
                 >
                   Cancel
                 </button>
@@ -1364,9 +1410,9 @@ export const Supplements: React.FC = () => {
 
       {/* MODAL: Edit Supplement Product */}
       {isEditProductOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-          <div className="relative w-full max-w-lg bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="relative w-full max-w-lg bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[92vh] flex flex-col my-auto">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 flex-shrink-0">
               <div className="flex items-center gap-2">
                 <Edit3 className="w-5 h-5 text-orange-600" />
                 <h3 className="font-bold font-heading text-slate-900 text-base">Edit Supplement Product</h3>
@@ -1379,129 +1425,131 @@ export const Supplements: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleUpdateProduct} className="p-6 space-y-4 text-xs">
-              {editError && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
-                  {editError}
-                </div>
-              )}
+            <form onSubmit={handleUpdateProduct} className="flex-1 flex flex-col min-h-0 overflow-hidden text-xs">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {editError && (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+                    {editError}
+                  </div>
+                )}
 
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Product Title</label>
-                <input
-                  type="text"
-                  required
-                  value={editProductForm.name}
-                  onChange={(e) => setEditProductForm({ ...editProductForm, name: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Brand</label>
+                  <label className="block text-slate-700 font-bold mb-1">Product Title</label>
                   <input
                     type="text"
                     required
-                    value={editProductForm.brand}
-                    onChange={(e) => setEditProductForm({ ...editProductForm, brand: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Category</label>
-                  <SearchableSelect
-                    options={categorySelectOptions}
-                    value={editProductForm.category}
-                    onChange={(val) => setEditProductForm({ ...editProductForm, category: String(val) })}
-                    placeholder="-- General Category --"
-                    searchPlaceholder="Search category name..."
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Flavor</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Double Rich Chocolate"
-                    value={editProductForm.flavor}
-                    onChange={(e) => setEditProductForm({ ...editProductForm, flavor: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Weight / Servings</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 1 kg / 30 servings"
-                    value={editProductForm.weight_or_servings}
-                    onChange={(e) => setEditProductForm({ ...editProductForm, weight_or_servings: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Purchase Cost (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    required
-                    value={editProductForm.cost_price}
-                    onChange={(e) => setEditProductForm({ ...editProductForm, cost_price: e.target.value })}
+                    value={editProductForm.name}
+                    onChange={(e) => setEditProductForm({ ...editProductForm, name: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Selling Price / MRP (₹)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    required
-                    value={editProductForm.selling_price}
-                    onChange={(e) => setEditProductForm({ ...editProductForm, selling_price: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold text-orange-700"
-                  />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Brand</label>
+                    <input
+                      type="text"
+                      required
+                      value={editProductForm.brand}
+                      onChange={(e) => setEditProductForm({ ...editProductForm, brand: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Category</label>
+                    <SearchableSelect
+                      options={categorySelectOptions}
+                      value={editProductForm.category}
+                      onChange={(val) => setEditProductForm({ ...editProductForm, category: String(val) })}
+                      placeholder="-- General Category --"
+                      searchPlaceholder="Search category name..."
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Flavor</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Double Rich Chocolate"
+                      value={editProductForm.flavor}
+                      onChange={(e) => setEditProductForm({ ...editProductForm, flavor: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Weight / Servings</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 1 kg / 30 servings"
+                      value={editProductForm.weight_or_servings}
+                      onChange={(e) => setEditProductForm({ ...editProductForm, weight_or_servings: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Purchase Cost (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      required
+                      value={editProductForm.cost_price}
+                      onChange={(e) => setEditProductForm({ ...editProductForm, cost_price: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Selling Price / MRP (₹)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      required
+                      value={editProductForm.selling_price}
+                      onChange={(e) => setEditProductForm({ ...editProductForm, selling_price: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold text-orange-700"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Current Stock Units</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editProductForm.stock_quantity}
+                      onChange={(e) => setEditProductForm({ ...editProductForm, stock_quantity: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Low-Stock Alert Level</label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={editProductForm.min_stock_alert}
+                      onChange={(e) => setEditProductForm({ ...editProductForm, min_stock_alert: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Current Stock Units</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={editProductForm.stock_quantity}
-                    onChange={(e) => setEditProductForm({ ...editProductForm, stock_quantity: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Low-Stock Alert Level</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={editProductForm.min_stock_alert}
-                    onChange={(e) => setEditProductForm({ ...editProductForm, min_stock_alert: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-end gap-3 px-6 py-3.5 border-t border-slate-100 bg-slate-50/70 flex-shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsEditProductOpen(false)}
-                  className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-bold transition-colors"
+                  className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-200 font-bold transition-colors"
                 >
                   Cancel
                 </button>
@@ -1509,9 +1557,9 @@ export const Supplements: React.FC = () => {
                 <button
                   type="submit"
                   disabled={isSubmittingEdit}
-                  className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-black shadow-md shadow-orange-500/20 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-black shadow-md shadow-orange-500/20 transition-all disabled:opacity-50"
                 >
-                  {isSubmittingEdit ? <span>Updating...</span> : <span>Save Changes</span>}
+                  {isSubmittingEdit ? 'Saving Changes...' : 'Save Product Changes'}
                 </button>
               </div>
             </form>
@@ -1801,11 +1849,10 @@ export const Supplements: React.FC = () => {
       {/* Toast Notification */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-5 duration-300">
-          <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl border text-xs font-bold ${
-            toast.type === 'success'
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl border text-xs font-bold ${toast.type === 'success'
               ? 'bg-slate-900 text-white border-slate-700'
               : 'bg-rose-600 text-white border-rose-700'
-          }`}>
+            }`}>
             {toast.type === 'success' ? (
               <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
             ) : (

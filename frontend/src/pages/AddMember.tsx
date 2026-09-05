@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   UserPlus, ArrowLeft, Dumbbell, Shield, CreditCard,
-  CheckCircle2, Sparkles, AlertCircle, RefreshCw
+  CheckCircle2, Sparkles, AlertCircle, RefreshCw, Flame
 } from 'lucide-react';
 import { MembershipPlan, Trainer, ReceiptData } from '../types';
 import { api } from '../services/api';
@@ -42,6 +42,7 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
     discount: '0',
     paid_amount: '',
     payment_method: 'UPI',
+    payment_date: '',
     transaction_ref: '',
   });
 
@@ -73,6 +74,19 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
   const finalPayable = Math.max(0, planPrice - discountVal);
   const paidVal = Number(formData.paid_amount || 0);
   const pendingBalance = Math.max(0, finalPayable - paidVal);
+
+  const weightTrainingPlans = plans.filter((p) =>
+    p.plan_type === 'WEIGHT_TRAINING' || (!p.plan_type && !p.name.toLowerCase().includes('cardio'))
+  ).sort((a, b) => a.duration_days - b.duration_days);
+
+  const cardioPlans = plans.filter((p) =>
+    p.plan_type === 'CARDIO' || p.name.toLowerCase().includes('cardio')
+  ).sort((a, b) => a.duration_days - b.duration_days);
+
+  const otherPlans = plans.filter((p) =>
+    !weightTrainingPlans.some((w) => w.id === p.id) &&
+    !cardioPlans.some((c) => c.id === p.id)
+  ).sort((a, b) => a.duration_days - b.duration_days);
 
   const calculateExpiry = () => {
     if (!selectedPlan || !formData.start_date) return 'N/A';
@@ -128,7 +142,7 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
         emergency_contact_name: formData.emergency_contact_name.trim() || 'Emergency Contact',
         emergency_contact_phone: formData.emergency_contact_phone.trim(),
         source: formData.source,
-        joining_date: formData.joining_date,
+        joining_date: formData.joining_date || formData.start_date,
         assigned_trainer_id: formData.assigned_trainer_id ? Number(formData.assigned_trainer_id) : null,
         notes: formData.notes.trim(),
 
@@ -137,6 +151,7 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
         discount: Number(formData.discount || 0),
         paid_amount: Number(formData.paid_amount || 0),
         payment_method: formData.payment_method,
+        payment_date: formData.payment_date || formData.start_date || formData.joining_date,
         transaction_ref: formData.transaction_ref.trim(),
       };
 
@@ -343,6 +358,27 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
 
               <div>
                 <label className="block text-slate-700 font-semibold mb-1">
+                  Admission / Joining Date <span className="text-rose-600">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={formData.joining_date}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setFormData(prev => ({
+                      ...prev,
+                      joining_date: val,
+                      start_date: prev.start_date === prev.joining_date ? val : prev.start_date,
+                      payment_date: (!prev.payment_date || prev.payment_date === prev.joining_date) ? val : prev.payment_date,
+                    }));
+                  }}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">
                   Gender <span className="text-rose-600">*</span>
                 </label>
                 <select
@@ -428,31 +464,155 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-              <div className="sm:col-span-2">
+              <div className="sm:col-span-2 space-y-2">
                 <label className="block text-slate-700 font-semibold mb-1">
                   Select Membership Plan <span className="text-rose-600">*</span>
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  {plans.map((p) => {
-                    const isSelected = formData.plan_id === p.id.toString();
-                    return (
-                      <div
-                        key={p.id}
-                        onClick={() => handlePlanChange(p.id.toString())}
-                        className={`p-3.5 rounded-2xl border cursor-pointer transition-all ${isSelected
-                          ? 'bg-orange-50/70 border-orange-500 shadow-sm'
-                          : 'bg-slate-50 border-slate-200 hover:border-slate-300'
-                          }`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <span className="font-bold text-slate-900 text-xs">{p.name}</span>
-                          <span className="font-bold text-orange-600">₹{Number(p.price).toLocaleString('en-IN')}</span>
+
+                {/* 2 Columns: Weight Training & Weight Training + Cardio */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Column 1: Weight Training */}
+                  <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-xl bg-orange-100 text-orange-700 flex items-center justify-center font-bold">
+                          <Dumbbell className="w-4 h-4" />
                         </div>
-                        <span className="text-[11px] text-slate-500 block mt-1">{p.duration_days} Days validity</span>
+                        <div>
+                          <h4 className="font-black text-slate-900 text-xs uppercase tracking-wide">
+                            Weight Training
+                          </h4>
+                          <p className="text-[10px] text-slate-500">Gym floor & strength training</p>
+                        </div>
                       </div>
-                    );
-                  })}
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-700">
+                        {weightTrainingPlans.length} Plans
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {weightTrainingPlans.map((p) => {
+                        const isSelected = formData.plan_id === p.id.toString();
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => handlePlanChange(p.id.toString())}
+                            className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${isSelected
+                              ? 'bg-orange-50/90 border-orange-500 shadow-xs ring-1 ring-orange-500/50'
+                              : 'bg-white border-slate-200 hover:border-orange-300 hover:bg-orange-50/20'
+                              }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${isSelected ? 'border-orange-500 bg-orange-500' : 'border-slate-300 bg-white'}`}>
+                                {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-slate-900 text-xs">
+                                    {p.duration_days === 30 ? '1 Month' : p.duration_days === 180 ? '6 Months' : p.duration_days === 365 ? '1 Year' : p.name}
+                                  </span>
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                                    {p.duration_days} Days
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-slate-400 block mt-0.5">{p.name}</span>
+                              </div>
+                            </div>
+                            <span className={`font-black text-sm ${isSelected ? 'text-orange-600' : 'text-slate-900'}`}>
+                              ₹{Number(p.price).toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Column 2: Weight Training + Cardio */}
+                  <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200 space-y-3">
+                    <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                          <Flame className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-black text-slate-900 text-xs uppercase tracking-wide">
+                            Weight Training + Cardio
+                          </h4>
+                          <p className="text-[10px] text-slate-500">Weight training + dedicated cardio floor</p>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-700">
+                        {cardioPlans.length} Plans
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {cardioPlans.map((p) => {
+                        const isSelected = formData.plan_id === p.id.toString();
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => handlePlanChange(p.id.toString())}
+                            className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between ${isSelected
+                              ? 'bg-amber-50/90 border-amber-500 shadow-xs ring-1 ring-amber-500/50'
+                              : 'bg-white border-slate-200 hover:border-amber-300 hover:bg-amber-50/20'
+                              }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-all ${isSelected ? 'border-amber-500 bg-amber-500' : 'border-slate-300 bg-white'}`}>
+                                {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-slate-900 text-xs">
+                                    {p.duration_days === 30 ? '1 Month' : p.duration_days === 180 ? '6 Months' : p.duration_days === 365 ? '1 Year' : p.name}
+                                  </span>
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                                    {p.duration_days} Days
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-slate-400 block mt-0.5">{p.name}</span>
+                              </div>
+                            </div>
+                            <span className={`font-black text-sm ${isSelected ? 'text-amber-600' : 'text-slate-900'}`}>
+                              ₹{Number(p.price).toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
+
+                {/* If any other general plans exist */}
+                {otherPlans.length > 0 && (
+                  <div className="pt-2">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1.5">
+                      Other Special Plans
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      {otherPlans.map((p) => {
+                        const isSelected = formData.plan_id === p.id.toString();
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => handlePlanChange(p.id.toString())}
+                            className={`p-3 rounded-xl border cursor-pointer transition-all ${isSelected
+                              ? 'bg-orange-50 border-orange-500 shadow-xs'
+                              : 'bg-white border-slate-200 hover:border-slate-300'
+                              }`}
+                          >
+                            <div className="flex justify-between items-start">
+                              <span className="font-bold text-slate-900 text-xs">{p.name}</span>
+                              <span className="font-bold text-orange-600">₹{Number(p.price).toLocaleString('en-IN')}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-500 block mt-1">{p.duration_days} Days</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -460,7 +620,15 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
                 <input
                   type="date"
                   value={formData.start_date}
-                  onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setFormData(prev => ({
+                      ...prev,
+                      start_date: val,
+                      joining_date: (prev.joining_date === new Date().toISOString().split('T')[0] || prev.joining_date === prev.start_date) ? val : prev.joining_date,
+                      payment_date: (!prev.payment_date || prev.payment_date === prev.start_date) ? val : prev.payment_date,
+                    }));
+                  }}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
                 />
               </div>
@@ -544,6 +712,18 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
                   onChange={(e) => setFormData({ ...formData, paid_amount: e.target.value })}
                   placeholder="e.g. 1500"
                   className="w-full px-3.5 py-2.5 bg-white border border-orange-400 rounded-xl text-slate-900 font-bold font-mono focus:outline-none focus:border-orange-500 text-sm shadow-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Payment Date <span className="text-slate-400 font-normal">(Auto-matches Start Date)</span>
+                </label>
+                <input
+                  type="date"
+                  value={formData.payment_date || formData.start_date}
+                  onChange={(e) => setFormData({ ...formData, payment_date: e.target.value })}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white font-semibold"
                 />
               </div>
 

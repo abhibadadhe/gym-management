@@ -269,7 +269,7 @@ class AddMemberWithMembershipSerializer(serializers.Serializer):
     emergency_contact_phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
     aadhar_number = serializers.CharField(max_length=20, required=False, allow_blank=True, default='')
     source = serializers.ChoiceField(choices=Member.SOURCE_CHOICES, default='WALK_IN', required=False)
-    joining_date = serializers.DateField(default=date.today, required=False)
+    joining_date = serializers.DateField(required=False, allow_null=True)
     assigned_trainer_id = serializers.IntegerField(required=False, allow_null=True)
     notes = serializers.CharField(required=False, allow_blank=True)
 
@@ -281,6 +281,7 @@ class AddMemberWithMembershipSerializer(serializers.Serializer):
     # Payment Info
     paid_amount = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00, required=False)
     payment_method = serializers.CharField(default='UPI', required=False)
+    payment_date = serializers.DateField(required=False, allow_null=True)
     transaction_ref = serializers.CharField(required=False, allow_blank=True)
 
     def validate_phone(self, value):
@@ -382,6 +383,7 @@ class RenewMembershipSerializer(serializers.Serializer):
     member_id = serializers.IntegerField()
     plan_id = serializers.IntegerField()
     start_date = serializers.DateField(required=False)
+    payment_date = serializers.DateField(required=False, allow_null=True)
     discount = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     paid_amount = serializers.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     payment_method = serializers.ChoiceField(choices=Payment.PAYMENT_METHOD_CHOICES, default='UPI')
@@ -394,6 +396,7 @@ class QuickPaymentSerializer(serializers.Serializer):
     membership_id = serializers.IntegerField(required=False, allow_null=True)
     amount = serializers.DecimalField(max_digits=10, decimal_places=2)
     payment_method = serializers.ChoiceField(choices=Payment.PAYMENT_METHOD_CHOICES, default='UPI')
+    payment_date = serializers.DateField(required=False, allow_null=True)
     transaction_ref = serializers.CharField(required=False, allow_blank=True)
     notes = serializers.CharField(required=False, allow_blank=True)
 

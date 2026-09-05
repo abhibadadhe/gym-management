@@ -47,6 +47,7 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
     phone: string;
     email: string;
     dob: string;
+    joining_date: string;
     gender: 'MALE' | 'FEMALE' | 'OTHER';
     address: string;
     emergency_contact_name: string;
@@ -58,6 +59,7 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
     phone: '',
     email: '',
     dob: '',
+    joining_date: '',
     gender: 'MALE',
     address: '',
     emergency_contact_name: '',
@@ -73,6 +75,7 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
       phone: member.phone || '',
       email: member.email || '',
       dob: member.dob || '',
+      joining_date: member.joining_date || '',
       gender: (member.gender as 'MALE' | 'FEMALE' | 'OTHER') || 'MALE',
       address: member.address || '',
       emergency_contact_name: member.emergency_contact_name || '',
@@ -111,6 +114,7 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
         phone: editForm.phone.trim(),
         email: editForm.email.trim() || undefined,
         dob: editForm.dob,
+        joining_date: editForm.joining_date,
         gender: editForm.gender,
         address: editForm.address.trim(),
         aadhar_number: editForm.aadhar_number.trim(),
@@ -395,11 +399,16 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
               <div className="flex justify-between py-1 border-b border-slate-50">
                 <span>Joining Date:</span>
                 <span className="font-semibold text-slate-800">
-                  {new Date(member.joining_date).toLocaleDateString('en-IN', {
-                    day: '2-digit',
-                    month: 'short',
-                    year: 'numeric',
-                  })}
+                  {(() => {
+                    const jd = member.joining_date;
+                    if (!jd) return '—';
+                    const d = new Date(jd.includes('T') ? jd : `${jd}T00:00:00`);
+                    return isNaN(d.getTime()) ? jd : d.toLocaleDateString('en-IN', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                    });
+                  })()}
                 </span>
               </div>
               <div className="flex justify-between py-1 border-b border-slate-50">
@@ -580,6 +589,19 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
                 value={editForm.email}
                 onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
                 placeholder="e.g. sachin.j@gmail.com"
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-semibold mb-1">
+                Admission / Joining Date <span className="text-rose-600">*</span>
+              </label>
+              <input
+                type="date"
+                value={editForm.joining_date}
+                onChange={(e) => setEditForm({ ...editForm, joining_date: e.target.value })}
+                required
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
               />
             </div>

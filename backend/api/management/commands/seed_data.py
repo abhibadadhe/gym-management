@@ -123,11 +123,12 @@ class Command(BaseCommand):
 
         # 4. Membership Plans
         plans_data = [
-            {'name': 'Monthly Plan', 'duration_days': 30, 'price': Decimal('1000.00'), 'description': 'Full access to gym equipment and cardio area for 1 month.'},
-            {'name': 'Quarterly Plan (3 Months)', 'duration_days': 90, 'price': Decimal('2500.00'), 'description': 'Save ₹500. Access to gym, free weights, and locker facilities.'},
-            {'name': 'Half-Yearly Plan (6 Months)', 'duration_days': 180, 'price': Decimal('4500.00'), 'description': 'Most popular! Includes basic diet guide and general trainer assistance.'},
-            {'name': 'Annual Plan (12 Months)', 'duration_days': 365, 'price': Decimal('7500.00'), 'description': 'Best value! Complete access + free body composition analysis every month.'},
-            {'name': 'Personal Training Add-on', 'duration_days': 30, 'price': Decimal('3500.00'), 'description': 'Dedicated 1-on-1 certified trainer guidance 6 days a week.'},
+            {'name': '1 Month - Weight Training', 'plan_type': 'WEIGHT_TRAINING', 'duration_days': 30, 'price': Decimal('1500.00'), 'description': 'Full access to weight lifting floor & equipment for 1 month.'},
+            {'name': '6 Months - Weight Training', 'plan_type': 'WEIGHT_TRAINING', 'duration_days': 180, 'price': Decimal('4500.00'), 'description': 'Half-yearly strength & weight training membership.'},
+            {'name': '1 Year - Weight Training', 'plan_type': 'WEIGHT_TRAINING', 'duration_days': 365, 'price': Decimal('8000.00'), 'description': 'Annual weight & resistance training access.'},
+            {'name': '1 Month - Weight Training + Cardio', 'plan_type': 'CARDIO', 'duration_days': 30, 'price': Decimal('2000.00'), 'description': 'Full access to weights floor + dedicated cardio zone for 1 month.'},
+            {'name': '6 Months - Weight Training + Cardio', 'plan_type': 'CARDIO', 'duration_days': 180, 'price': Decimal('5500.00'), 'description': 'Half-yearly full access: Weight training + cardio floor.'},
+            {'name': '1 Year - Weight Training + Cardio', 'plan_type': 'CARDIO', 'duration_days': 365, 'price': Decimal('10000.00'), 'description': 'Annual all-inclusive: Weight training + cardio access.'},
         ]
 
         plans = []
@@ -135,6 +136,7 @@ class Command(BaseCommand):
             plan_obj, _ = MembershipPlan.objects.get_or_create(
                 name=p['name'],
                 defaults={
+                    'plan_type': p['plan_type'],
                     'duration_days': p['duration_days'],
                     'price': p['price'],
                     'description': p['description'],

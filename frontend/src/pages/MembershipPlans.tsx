@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Award, Plus, Edit2, Trash2, CheckCircle2, RefreshCw, Clock, AlertTriangle } from 'lucide-react';
+import { Award, Plus, Edit2, Trash2, CheckCircle2, RefreshCw, Clock, AlertTriangle, Dumbbell, Flame } from 'lucide-react';
 import { MembershipPlan } from '../types';
 import { api } from '../services/api';
 import { Modal } from '../components/common/Modal';
@@ -23,6 +23,7 @@ export const MembershipPlans: React.FC = () => {
     duration_days: '30',
     price: '',
     description: '',
+    plan_type: 'WEIGHT_TRAINING' as 'WEIGHT_TRAINING' | 'CARDIO' | 'GENERAL',
     is_active: true,
   });
 
@@ -49,6 +50,7 @@ export const MembershipPlans: React.FC = () => {
       duration_days: '30',
       price: '',
       description: '',
+      plan_type: 'WEIGHT_TRAINING',
       is_active: true,
     });
     setIsModalOpen(true);
@@ -61,6 +63,7 @@ export const MembershipPlans: React.FC = () => {
       duration_days: plan.duration_days.toString(),
       price: plan.price.toString(),
       description: plan.description || '',
+      plan_type: plan.plan_type || (plan.name.toLowerCase().includes('cardio') ? 'CARDIO' : 'WEIGHT_TRAINING'),
       is_active: plan.is_active,
     });
     setIsModalOpen(true);
@@ -76,6 +79,7 @@ export const MembershipPlans: React.FC = () => {
         duration_days: Number(formData.duration_days),
         price: Number(formData.price),
         description: formData.description.trim(),
+        plan_type: formData.plan_type,
         is_active: formData.is_active,
       };
 
@@ -144,6 +148,25 @@ export const MembershipPlans: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                      plan.plan_type === 'CARDIO' || plan.name.toLowerCase().includes('cardio')
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : 'bg-orange-50 text-orange-700 border-orange-200'
+                    }`}
+                  >
+                    {plan.plan_type === 'CARDIO' || plan.name.toLowerCase().includes('cardio') ? (
+                      <>
+                        <Flame className="w-3 h-3 text-amber-600" />
+                        Cardio + Weights
+                      </>
+                    ) : (
+                      <>
+                        <Dumbbell className="w-3 h-3 text-orange-600" />
+                        Weight Training
+                      </>
+                    )}
+                  </span>
+                  <span
                     className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                       plan.is_active
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -206,6 +229,47 @@ export const MembershipPlans: React.FC = () => {
         maxWidth="md"
       >
         <form onSubmit={handleSave} className="space-y-4 text-xs">
+          <div>
+            <label className="block text-slate-700 font-semibold mb-1">Plan Category / Floor</label>
+            <div className="grid grid-cols-2 gap-3">
+              <label
+                className={`p-2.5 rounded-xl border flex items-center gap-2 cursor-pointer transition-all ${
+                  formData.plan_type === 'WEIGHT_TRAINING'
+                    ? 'bg-orange-50/90 border-orange-500 text-orange-950 font-bold shadow-xs'
+                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="plan_type"
+                  checked={formData.plan_type === 'WEIGHT_TRAINING'}
+                  onChange={() => setFormData({ ...formData, plan_type: 'WEIGHT_TRAINING' })}
+                  className="text-orange-600 focus:ring-orange-500"
+                />
+                <Dumbbell className="w-4 h-4 text-orange-600 flex-shrink-0" />
+                <span className="text-xs">Weight Training</span>
+              </label>
+
+              <label
+                className={`p-2.5 rounded-xl border flex items-center gap-2 cursor-pointer transition-all ${
+                  formData.plan_type === 'CARDIO'
+                    ? 'bg-amber-50/90 border-amber-500 text-amber-950 font-bold shadow-xs'
+                    : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="plan_type"
+                  checked={formData.plan_type === 'CARDIO'}
+                  onChange={() => setFormData({ ...formData, plan_type: 'CARDIO' })}
+                  className="text-amber-600 focus:ring-amber-500"
+                />
+                <Flame className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                <span className="text-xs">Weight + Cardio</span>
+              </label>
+            </div>
+          </div>
+
           <div>
             <label className="block text-slate-700 font-semibold mb-1">Plan Name</label>
             <input
