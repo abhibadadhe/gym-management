@@ -106,8 +106,8 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.full_name.trim() || !formData.phone.trim() || !formData.dob || !formData.gender || !formData.address.trim() || !formData.plan_id) {
-      setErrorMsg('Please fill in all mandatory fields: Full Name, Phone number, DOB, Gender, Address, and Plan.');
+    if (!formData.full_name.trim() || !formData.phone.trim() || !formData.gender || !formData.address.trim() || !formData.plan_id) {
+      setErrorMsg('Please fill in all mandatory fields: Full Name, Phone number, Gender, Address, and Plan.');
       return;
     }
 
@@ -136,7 +136,7 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
         phone: formData.phone.trim(),
         email: formData.email.trim() || undefined,
         gender: formData.gender,
-        dob: formData.dob,
+        dob: formData.dob || null,
         address: formData.address.trim(),
         aadhar_number: formData.aadhar_number.trim(),
         emergency_contact_name: formData.emergency_contact_name.trim() || 'Emergency Contact',
@@ -345,14 +345,13 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
 
               <div>
                 <label className="block text-slate-700 font-semibold mb-1">
-                  Date of Birth <span className="text-rose-600">*</span>
+                  Date of Birth <span className="text-slate-400 font-normal text-xs">(Optional)</span>
                 </label>
                 <input
                   type="date"
                   value={formData.dob}
                   onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
-                  required
                 />
               </div>
 

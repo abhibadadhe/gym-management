@@ -262,7 +262,7 @@ class AddMemberWithMembershipSerializer(serializers.Serializer):
     last_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
     phone = serializers.CharField(max_length=20)
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
-    dob = serializers.DateField(required=True)
+    dob = serializers.DateField(required=False, allow_null=True)
     gender = serializers.ChoiceField(choices=Member.GENDER_CHOICES, required=True)
     address = serializers.CharField(required=True)
     emergency_contact_name = serializers.CharField(required=False, allow_blank=True)

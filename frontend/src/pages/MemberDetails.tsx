@@ -90,8 +90,8 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!member) return;
-    if (!editForm.full_name.trim() || !editForm.phone.trim() || !editForm.dob || !editForm.gender || !editForm.address.trim()) {
-      setEditError('Please fill in all compulsory fields (Full Name, Phone, DOB, Gender, Address).');
+    if (!editForm.full_name.trim() || !editForm.phone.trim() || !editForm.gender || !editForm.address.trim()) {
+      setEditError('Please fill in all compulsory fields (Full Name, Phone, Gender, Address).');
       return;
     }
 
@@ -113,7 +113,7 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
         full_name: editForm.full_name.trim(),
         phone: editForm.phone.trim(),
         email: editForm.email.trim() || undefined,
-        dob: editForm.dob,
+        dob: editForm.dob || null,
         joining_date: editForm.joining_date,
         gender: editForm.gender,
         address: editForm.address.trim(),
@@ -608,13 +608,12 @@ export const MemberDetails: React.FC<MemberDetailsProps> = ({
 
             <div>
               <label className="block text-slate-700 font-semibold mb-1">
-                Date of Birth <span className="text-rose-600">*</span>
+                Date of Birth <span className="text-slate-400 font-normal text-xs">(Optional)</span>
               </label>
               <input
                 type="date"
                 value={editForm.dob}
                 onChange={(e) => setEditForm({ ...editForm, dob: e.target.value })}
-                required
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500"
               />
             </div>
