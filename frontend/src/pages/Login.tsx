@@ -390,7 +390,7 @@ export const Login: React.FC = () => {
 
         {/* Footer info */}
         <div className="text-center pt-2">
-          <p className="text-[11px] text-slate-400 font-medium">
+          <p className="text-[11px] text-black font-bold">
             Morya Fitness, Sinnar • Managed by Gokul Gugale
           </p>
         </div>
