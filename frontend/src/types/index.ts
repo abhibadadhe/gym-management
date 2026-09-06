@@ -96,6 +96,7 @@ export interface Payment {
   received_by?: number | null;
   received_by_name?: string;
   created_at: string;
+  is_dues_payment?: boolean;
 }
 
 export interface Attendance {
@@ -220,13 +221,35 @@ export interface DashboardKPIs {
   this_month_collection: number;
   pending_payments: number;
   new_members_this_month: number;
+  supplements_month_revenue?: number;
+  supplements_pending_dues?: number;
+  combined_month_revenue?: number;
+  supplements_month_profit?: number;
+  supplements_total_profit?: number;
+  supplements_profit_margin?: number;
 }
 
 export interface DashboardData {
   kpis: DashboardKPIs;
-  revenue_trend: { month: string; revenue: number; expenses: number; profit: number }[];
+  revenue_trend: {
+    month: string;
+    revenue: number;
+    fee_revenue?: number;
+    supplement_revenue?: number;
+    expenses: number;
+    profit: number;
+  }[];
   attendance_trend: { date: string; count: number }[];
   plan_distribution: { name: string; value: number }[];
+  popular_products?: {
+    name: string;
+    brand?: string;
+    quantity: number;
+    revenue: number;
+    cost?: number;
+    profit?: number;
+    margin?: number;
+  }[];
   recent_checkins: Attendance[];
   expiring_members: {
     id: number;
@@ -288,6 +311,19 @@ export interface ReceiptData {
     pending_amount: number;
   };
   plan_description?: string;
+  receipt_type?: string;
+  is_dues_payment?: boolean;
+  payment_date?: string;
+  discount_applied?: number;
+  final_payable?: number;
+  amount_paid?: number;
+  already_paid?: number;
+  this_payment_amount?: number;
+  total_paid_amount?: number;
+  remaining_pending_dues?: number;
+  payment_method?: string;
+  transaction_ref?: string;
+  received_by?: string;
   payment: {
     amount: number;
     method: string;
@@ -355,17 +391,52 @@ export interface SupplementSaleItem {
   unit_price: number;
   cost_price?: number;
   subtotal: number;
+  profit?: number;
+}
+
+export interface SupplementPayment {
+  id: number;
+  receipt_number: string;
+  sale: number;
+  invoice_number?: string;
+  customer_name?: string;
+  customer_phone?: string;
+  member_id?: string | null;
+  items_summary?: string;
+  final_amount?: number;
+  pending_amount?: number;
+  amount: number;
+  is_dues_payment?: boolean;
+  prior_paid?: number;
+  total_paid_to_date?: number;
+  payment_method: string;
+  payment_date: string;
+  notes?: string;
+  received_by?: number | null;
+  received_by_name?: string;
+  created_at?: string;
 }
 
 export interface SupplementSale {
   id: number;
   invoice_number: string;
   member?: number | null;
+  member_code?: string;
   customer_name: string;
   customer_phone?: string;
   subtotal: number;
   discount: number;
   final_amount: number;
+  paid_amount: number;
+  initial_paid_amount?: number;
+  dues_paid_amount?: number;
+  has_collected_dues?: boolean;
+  pending_amount: number;
+  total_cost?: number;
+  profit?: number;
+  profit_margin?: number;
+  payment_status: 'PAID' | 'PARTIAL' | 'PENDING';
+  payment_status_display?: string;
   payment_method: string;
   payment_method_display?: string;
   sold_by?: number | null;
@@ -373,6 +444,7 @@ export interface SupplementSale {
   sale_date: string;
   notes?: string;
   items: SupplementSaleItem[];
+  payments?: SupplementPayment[];
   created_at?: string;
 }
 
@@ -384,9 +456,27 @@ export interface SupplementSummary {
   today_sales: number;
   monthly_sales: number;
   lifetime_sales: number;
+  total_sales?: number;
+  total_pending_dues?: number;
+  pending_dues_count?: number;
+  total_profit?: number;
+  month_profit?: number;
+  profit_margin?: number;
+  total_cogs?: number;
 }
 
 export interface SupplementReceiptData {
+  id?: number;
+  receipt_type?: 'INVOICE' | 'DUES_RECEIPT' | 'PAYMENT_RECEIPT';
+  is_dues_payment?: boolean;
+  receipt_number?: string;
+  payment_id?: number;
+  payment_date?: string;
+  already_paid?: number;
+  this_payment_amount?: number;
+  total_paid_amount?: number;
+  original_invoice_number?: string;
+  original_sale_date?: string;
   gym: {
     name: string;
     tagline: string;
@@ -413,8 +503,17 @@ export interface SupplementReceiptData {
   subtotal: number;
   discount: number;
   final_amount: number;
+  paid_amount: number;
+  initial_paid_amount?: number;
+  dues_paid_amount?: number;
+  has_collected_dues?: boolean;
+  pending_amount: number;
+  payment_status: string;
+  payment_status_display?: string;
   payment_method: string;
   sold_by: string;
   notes?: string;
+  payments?: SupplementPayment[];
 }
+
 

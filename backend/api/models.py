@@ -264,15 +264,21 @@ class Payment(models.Model):
     def generate_receipt_number(cls):
         year = date.today().year
         prefix = f"MF-REC-{year}-"
-        latest = cls.objects.filter(receipt_number__startswith=prefix).order_by('-receipt_number').first()
-        if latest:
+        max_seq = 0
+        latest_p = cls.objects.filter(receipt_number__startswith=prefix).order_by('-receipt_number').first()
+        if latest_p:
             try:
-                seq = int(latest.receipt_number[len(prefix):]) + 1
+                max_seq = max(max_seq, int(latest_p.receipt_number[len(prefix):]))
             except ValueError:
-                seq = 1
-        else:
-            seq = 1
-        return f"{prefix}{seq:04d}"
+                pass
+        try:
+            from api.models import SupplementPayment
+            latest_sp = SupplementPayment.objects.filter(receipt_number__startswith=prefix).order_by('-receipt_number').first()
+            if latest_sp:
+                max_seq = max(max_seq, int(latest_sp.receipt_number[len(prefix):]))
+        except Exception:
+            pass
+        return f"{prefix}{max_seq + 1:04d}"
 
 
 class Attendance(models.Model):
@@ -466,6 +472,12 @@ class SupplementSale(models.Model):
         ('NETBANKING', 'Net Banking / Transfer'),
     ]
 
+    PAYMENT_STATUS_CHOICES = [
+        ('PAID', 'Fully Paid'),
+        ('PARTIAL', 'Partially Paid'),
+        ('PENDING', 'Pending Payment'),
+    ]
+
     invoice_number = models.CharField(max_length=50, unique=True, db_index=True)
     member = models.ForeignKey(Member, on_delete=models.SET_NULL, null=True, blank=True, related_name='supplement_purchases')
     customer_name = models.CharField(max_length=150)
@@ -473,6 +485,10 @@ class SupplementSale(models.Model):
     subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     discount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     final_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    paid_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    initial_paid_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    pending_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='PAID')
     payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default='UPI')
     sold_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     sale_date = models.DateTimeField(default=timezone.now)
@@ -483,7 +499,51 @@ class SupplementSale(models.Model):
         ordering = ['-sale_date']
 
     def __str__(self):
-        return f"{self.invoice_number} - {self.customer_name} (₹{self.final_amount})"
+        return f"{self.invoice_number} - {self.customer_name} (₹{self.final_amount}, Status: {self.payment_status})"
+
+    @property
+    def dues_paid_amount(self):
+        init = Decimal(str(self.initial_paid_amount or '0.00'))
+        paid = Decimal(str(self.paid_amount or '0.00'))
+        return max(Decimal('0.00'), paid - init)
+
+    @property
+    def has_collected_dues(self):
+        return self.dues_paid_amount > Decimal('0.00')
+
+    @property
+    def clean_notes(self):
+        if not self.notes:
+            return ""
+        import re
+        lines = [line.strip() for line in self.notes.splitlines() if line.strip() and not re.search(r'\[.*?\]\s*Collected\s*.*?(?:via|$)', line, re.IGNORECASE)]
+        return "\n".join(lines)
+
+    def save(self, *args, **kwargs):
+        if not self.invoice_number:
+            self.invoice_number = self.generate_invoice_number()
+        if self.subtotal is not None and self.discount is not None:
+            self.final_amount = max(Decimal('0.00'), Decimal(str(self.subtotal)) - Decimal(str(self.discount)))
+        if self.paid_amount is None:
+            self.paid_amount = self.final_amount
+        else:
+            self.paid_amount = Decimal(str(self.paid_amount))
+
+        if self.pk is None and (self.initial_paid_amount is None or self.initial_paid_amount == Decimal('0.00')):
+            self.initial_paid_amount = self.paid_amount
+        elif self.initial_paid_amount is None:
+            self.initial_paid_amount = self.paid_amount
+
+        self.pending_amount = max(Decimal('0.00'), Decimal(str(self.final_amount)) - self.paid_amount)
+        if self.paid_amount >= self.final_amount and self.final_amount > 0:
+            self.payment_status = 'PAID'
+        elif self.paid_amount > 0 and self.paid_amount < self.final_amount:
+            self.payment_status = 'PARTIAL'
+        elif self.final_amount == 0:
+            self.payment_status = 'PAID'
+        else:
+            self.payment_status = 'PENDING'
+        super().save(*args, **kwargs)
 
     @classmethod
     def generate_invoice_number(cls):
@@ -512,6 +572,45 @@ class SupplementSaleItem(models.Model):
 
     def __str__(self):
         return f"{self.product_name} x {self.quantity} (₹{self.subtotal})"
+
+
+class SupplementPayment(models.Model):
+    PAYMENT_METHOD_CHOICES = [
+        ('UPI', 'UPI'),
+        ('CASH', 'Cash'),
+        ('CARD', 'Debit / Credit Card'),
+        ('BANK_TRANSFER', 'Bank Transfer / NEFT'),
+        ('NET_BANKING', 'Net Banking'),
+    ]
+
+    receipt_number = models.CharField(max_length=50, unique=True, db_index=True)
+    sale = models.ForeignKey(SupplementSale, on_delete=models.CASCADE, related_name='payments')
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_method = models.CharField(max_length=30, choices=PAYMENT_METHOD_CHOICES, default='UPI')
+    payment_date = models.DateField(default=date.today)
+    notes = models.TextField(blank=True)
+    received_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['payment_date', 'created_at']
+
+    def __str__(self):
+        return f"{self.receipt_number} - ₹{self.amount} ({self.sale.customer_name})"
+
+    @classmethod
+    def generate_receipt_number(cls):
+        year = date.today().year
+        prefix = f"MF-SUP-{year}-"
+        latest_sp = cls.objects.filter(receipt_number__startswith=prefix).order_by('-receipt_number').first()
+        if latest_sp:
+            try:
+                seq = int(latest_sp.receipt_number[len(prefix):]) + 1
+            except ValueError:
+                seq = 1
+        else:
+            seq = 1
+        return f"{prefix}{seq:04d}"
 
 
 class PasswordResetOTP(models.Model):

@@ -1,33 +1,49 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   ShoppingBag, Plus, Search, Filter, AlertTriangle,
-  CheckCircle2, PackagePlus, RefreshCw, Printer,
+  CheckCircle2, PackagePlus, RefreshCw, Printer, Receipt,
   TrendingUp, DollarSign, Layers, ArrowUpDown, X,
   Trash2, Edit3, UserCheck, CreditCard, Sparkles,
   ChevronRight, ArrowRight, ShieldAlert, Check
 } from 'lucide-react';
+import confetti from 'canvas-confetti';
 import {
   SupplementCategory, SupplementProduct, SupplementSale,
-  SupplementSummary, Member, SupplementReceiptData
+  SupplementSummary, Member, SupplementReceiptData, SupplementPayment
 } from '../types';
 import { api } from '../services/api';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { SupplementReceiptModal } from '../components/receipts/SupplementReceiptModal';
 import { Modal } from '../components/common/Modal';
 import { SearchableSelect, SearchableSelectOption } from '../components/common/SearchableSelect';
+import { getTodayDateString } from '../utils/date';
 
-export const Supplements: React.FC = () => {
+interface SupplementsProps {
+  initialTab?: 'inventory' | 'sales' | 'pending_dues';
+}
+
+export const Supplements: React.FC<SupplementsProps> = ({ initialTab = 'inventory' }) => {
   // Data States
   const [products, setProducts] = useState<SupplementProduct[]>([]);
   const [categories, setCategories] = useState<SupplementCategory[]>([]);
   const [sales, setSales] = useState<SupplementSale[]>([]);
+  const [pendingDues, setPendingDues] = useState<SupplementSale[]>([]);
+  const [payments, setPayments] = useState<SupplementPayment[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [summary, setSummary] = useState<SupplementSummary | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Filters & Tabs
-  const [activeTab, setActiveTab] = useState<'inventory' | 'sales'>('inventory');
+  const [activeTab, setActiveTab] = useState<'inventory' | 'sales' | 'pending_dues'>(initialTab);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [salesSearchQuery, setSalesSearchQuery] = useState<string>('');
+  const [duesSearchQuery, setDuesSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [showLowStockOnly, setShowLowStockOnly] = useState<boolean>(false);
 
@@ -38,6 +54,16 @@ export const Supplements: React.FC = () => {
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState<boolean>(false);
   const [selectedProductForRestock, setSelectedProductForRestock] = useState<SupplementProduct | null>(null);
   const [activeReceipt, setActiveReceipt] = useState<SupplementReceiptData | null>(null);
+
+  // Modal: Collect Due
+  const [isCollectModalOpen, setIsCollectModalOpen] = useState<boolean>(false);
+  const [collectTargetSale, setCollectTargetSale] = useState<SupplementSale | null>(null);
+  const [collectAmount, setCollectAmount] = useState<string>('');
+  const [collectDate, setCollectDate] = useState<string>(getTodayDateString());
+  const [collectMethod, setCollectMethod] = useState<string>('UPI');
+  const [collectNotes, setCollectNotes] = useState<string>('');
+  const [isSubmittingCollect, setIsSubmittingCollect] = useState<boolean>(false);
+  const [collectError, setCollectError] = useState<string | null>(null);
 
   // Form States: New Category
   const [categoryName, setCategoryName] = useState<string>('');
@@ -88,15 +114,6 @@ export const Supplements: React.FC = () => {
   const [restockQty, setRestockQty] = useState<string>('5');
   const [restockCost, setRestockCost] = useState<string>('');
 
-  // Helper for today's local date in YYYY-MM-DD
-  const getTodayDateString = () => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
-
   // Form States: New Sale (POS)
   const [customerType, setCustomerType] = useState<'member' | 'walk_in'>('member');
   const [selectedMemberId, setSelectedMemberId] = useState<string>('');
@@ -107,6 +124,8 @@ export const Supplements: React.FC = () => {
     { productId: 0, quantity: 1 }
   ]);
   const [discountAmount, setDiscountAmount] = useState<string>('0');
+  const [paidAmount, setPaidAmount] = useState<string>('');
+  const [isPaidAmountManuallyEdited, setIsPaidAmountManuallyEdited] = useState<boolean>(false);
   const [paymentMethod, setPaymentMethod] = useState<string>('UPI');
   const [saleNotes, setSaleNotes] = useState<string>('');
   const [isSubmittingSale, setIsSubmittingSale] = useState<boolean>(false);
@@ -116,18 +135,22 @@ export const Supplements: React.FC = () => {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [prodData, catData, salesData, summaryData, membersData] = await Promise.all([
+      const [prodData, catData, salesData, summaryData, membersData, duesData, paymentsData] = await Promise.all([
         api.getSupplementProducts(),
         api.getSupplementCategories(),
         api.getSupplementSales(),
         api.getSupplementSummary(),
         api.getMembers(),
+        api.getSupplementPendingDues(),
+        api.getSupplementPayments(),
       ]);
       setProducts(prodData);
       setCategories(catData);
       setSales(salesData);
       setSummary(summaryData);
       setMembers(membersData);
+      setPendingDues(duesData);
+      setPayments(paymentsData || []);
     } catch (err) {
       console.error('Failed to load supplements data:', err);
     } finally {
@@ -138,6 +161,19 @@ export const Supplements: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  const filteredReceipts = useMemo(() => {
+    if (!salesSearchQuery.trim()) return payments;
+    const q = salesSearchQuery.toLowerCase().trim();
+    return payments.filter(
+      (p) =>
+        p.receipt_number?.toLowerCase().includes(q) ||
+        p.customer_name?.toLowerCase().includes(q) ||
+        p.member_id?.toLowerCase().includes(q) ||
+        p.items_summary?.toLowerCase().includes(q) ||
+        p.notes?.toLowerCase().includes(q)
+    );
+  }, [payments, salesSearchQuery]);
 
   // Filtered Products
   const filteredProducts = products.filter((p) => {
@@ -283,6 +319,14 @@ export const Supplements: React.FC = () => {
     return Math.max(0, gross - discount);
   };
 
+  // Auto-sync paidAmount with calculateFinalTotal if not manually modified
+  useEffect(() => {
+    if (!isPaidAmountManuallyEdited) {
+      const ft = calculateFinalTotal();
+      setPaidAmount(ft > 0 ? ft.toString() : '');
+    }
+  }, [saleItems, discountAmount, products, isPaidAmountManuallyEdited]);
+
   // Handle Create POS Sale
   const handleCreateSale = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -340,11 +384,15 @@ export const Supplements: React.FC = () => {
 
     setIsSubmittingSale(true);
     try {
+      const finalAmt = calculateFinalTotal();
+      const enteredPaid = paidAmount === '' ? finalAmt : Math.max(0, parseFloat(paidAmount) || 0);
+
       const payload = {
         member: memberIdVal,
         customer_name: custName,
         customer_phone: custPhone,
         discount: parseFloat(discountAmount) || 0,
+        paid_amount: enteredPaid,
         payment_method: paymentMethod,
         sale_date: formattedSaleDate,
         notes: saleNotes,
@@ -418,6 +466,8 @@ export const Supplements: React.FC = () => {
     setSaleDate(getTodayDateString());
     setSaleItems([{ productId: 0, quantity: 1 }]);
     setDiscountAmount('0');
+    setPaidAmount('');
+    setIsPaidAmountManuallyEdited(false);
     setPaymentMethod('UPI');
     setSaleNotes('');
     setSaleError(null);
@@ -485,9 +535,9 @@ export const Supplements: React.FC = () => {
     }
   };
 
-  const handlePrintPastReceipt = async (saleId: number) => {
+  const handlePrintPastReceipt = async (saleId: number, paymentId?: number) => {
     try {
-      const receipt = await api.getSupplementReceipt(saleId);
+      const receipt = await api.getSupplementReceipt(saleId, paymentId);
       setActiveReceipt(receipt);
     } catch (err) {
       setToast({
@@ -495,6 +545,75 @@ export const Supplements: React.FC = () => {
         type: 'error',
       });
       setTimeout(() => setToast(null), 4000);
+    }
+  };
+
+  const handleOpenCollectDue = (sale: SupplementSale) => {
+    setCollectTargetSale(sale);
+    setCollectAmount(Number(sale.pending_amount).toString());
+    setCollectDate(getTodayDateString());
+    setCollectMethod('UPI');
+    setCollectNotes('');
+    setCollectError(null);
+    setIsCollectModalOpen(true);
+  };
+
+  const handleConfirmCollectDue = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!collectTargetSale) return;
+    const amt = parseFloat(collectAmount);
+    if (isNaN(amt) || amt <= 0) {
+      setCollectError('Please enter a valid payment amount greater than 0.');
+      return;
+    }
+    if (amt > Number(collectTargetSale.pending_amount)) {
+      setCollectError(`Payment cannot exceed outstanding due of ₹${Number(collectTargetSale.pending_amount).toLocaleString('en-IN')}`);
+      return;
+    }
+
+    setIsSubmittingCollect(true);
+    setCollectError(null);
+    try {
+      const res = await api.collectSupplementDue(collectTargetSale.id, {
+        amount: amt,
+        payment_method: collectMethod,
+        payment_date: collectDate,
+        notes: collectNotes.trim() || undefined,
+      });
+
+      try {
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          origin: { y: 0.7 }
+        });
+      } catch (e) {
+        // ignore
+      }
+
+      setIsCollectModalOpen(false);
+      const targetSaleId = collectTargetSale.id;
+      const targetInvoice = collectTargetSale.invoice_number;
+      setCollectTargetSale(null);
+
+      await loadData();
+
+      if (res && res.receipt) {
+        setActiveReceipt(res.receipt);
+      } else {
+        const updatedReceipt = await api.getSupplementReceipt(targetSaleId);
+        setActiveReceipt(updatedReceipt);
+      }
+
+      setToast({
+        message: `₹${amt.toLocaleString('en-IN')} payment recorded for Invoice #${targetInvoice} on ${collectDate}!`,
+        type: 'success',
+      });
+      setTimeout(() => setToast(null), 4000);
+    } catch (err: any) {
+      setCollectError(err.response?.data?.error || err.response?.data?.detail || 'Failed to collect due amount.');
+    } finally {
+      setIsSubmittingCollect(false);
     }
   };
 
@@ -624,7 +743,7 @@ export const Supplements: React.FC = () => {
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3.5">
         {/* Total Products */}
         <div className="glass-panel p-5 rounded-3xl border border-slate-200 shadow-sm space-y-2">
           <div className="flex justify-between items-center text-slate-400">
@@ -656,18 +775,59 @@ export const Supplements: React.FC = () => {
           <p className="text-[10px] text-slate-400">Direct supplement counter sales</p>
         </div>
 
-        {/* Monthly Revenue */}
+        {/* Total Sales */}
         <div className="glass-panel p-5 rounded-3xl border border-slate-200 shadow-sm space-y-2">
           <div className="flex justify-between items-center text-orange-600">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Monthly Revenue</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Sales</span>
             <DollarSign className="w-4 h-4" />
           </div>
           <div className="flex items-baseline gap-1">
             <span className="text-2xl font-black text-orange-600 font-heading">
-              ₹{(summary?.monthly_sales || 0).toLocaleString('en-IN')}
+              ₹{(summary?.total_sales ?? summary?.lifetime_sales ?? 0).toLocaleString('en-IN')}
             </span>
           </div>
-          <p className="text-[10px] text-slate-400">This month's nutrition collection</p>
+          <p className="text-[10px] text-slate-400">All-time supplement sales collected</p>
+        </div>
+
+        {/* Total Profit */}
+        <div className="glass-panel p-5 rounded-3xl border border-emerald-200/90 bg-emerald-50/20 shadow-sm space-y-2">
+          <div className="flex justify-between items-center text-emerald-600">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">Total Profit</span>
+            <TrendingUp className="w-4 h-4 text-emerald-600" />
+          </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-2xl font-black text-emerald-700 font-heading">
+              ₹{(summary?.total_profit || 0).toLocaleString('en-IN')}
+            </span>
+          </div>
+          <p className="text-[10px] text-emerald-700 font-semibold">
+            This Month: ₹{(summary?.month_profit || 0).toLocaleString('en-IN')} • {summary?.profit_margin ?? 0}% Margin
+          </p>
+        </div>
+
+        {/* Pending Dues */}
+        <div
+          onClick={() => setActiveTab('pending_dues')}
+          className={`glass-panel p-5 rounded-3xl border shadow-sm space-y-2 cursor-pointer transition-all ${
+            (summary?.total_pending_dues || 0) > 0
+              ? 'border-rose-200 bg-rose-50/40 hover:bg-rose-50'
+              : 'border-slate-200 hover:border-slate-300'
+          }`}
+        >
+          <div className="flex justify-between items-center text-rose-600">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Pending Dues</span>
+            <AlertTriangle className="w-4 h-4" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className={`text-2xl font-black font-heading ${
+              (summary?.total_pending_dues || 0) > 0 ? 'text-rose-700' : 'text-slate-900'
+            }`}>
+              ₹{(summary?.total_pending_dues || 0).toLocaleString('en-IN')}
+            </span>
+          </div>
+          <p className="text-[10px] text-slate-400">
+            {summary?.pending_dues_count || pendingDues.length || 0} unpaid / partial invoices
+          </p>
         </div>
 
         {/* Low Stock Alerts */}
@@ -698,10 +858,10 @@ export const Supplements: React.FC = () => {
       {/* Main Container with Tabs */}
       <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
         {/* Navigation Tabs */}
-        <div className="flex border-b border-slate-200 px-6 pt-4 gap-6">
+        <div className="flex border-b border-slate-200 px-6 pt-4 gap-6 overflow-x-auto">
           <button
             onClick={() => setActiveTab('inventory')}
-            className={`pb-4 text-xs font-bold font-heading uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 ${activeTab === 'inventory'
+            className={`pb-4 text-xs font-bold font-heading uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'inventory'
                 ? 'border-orange-600 text-orange-600'
                 : 'border-transparent text-slate-400 hover:text-slate-700'
               }`}
@@ -712,13 +872,29 @@ export const Supplements: React.FC = () => {
 
           <button
             onClick={() => setActiveTab('sales')}
-            className={`pb-4 text-xs font-bold font-heading uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 ${activeTab === 'sales'
+            className={`pb-4 text-xs font-bold font-heading uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'sales'
                 ? 'border-orange-600 text-orange-600'
                 : 'border-transparent text-slate-400 hover:text-slate-700'
               }`}
           >
             <ShoppingBag className="w-4 h-4" />
-            <span>Sales History & Invoices ({sales.length})</span>
+            <span>Sales History & Receipts ({payments.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('pending_dues')}
+            className={`pb-4 text-xs font-bold font-heading uppercase tracking-wider transition-all border-b-2 flex items-center gap-2 whitespace-nowrap ${activeTab === 'pending_dues'
+                ? 'border-orange-600 text-orange-600'
+                : 'border-transparent text-slate-400 hover:text-slate-700'
+              }`}
+          >
+            <CreditCard className="w-4 h-4" />
+            <span>Pending Dues ({pendingDues.length})</span>
+            {pendingDues.length > 0 && (
+              <span className="px-2 py-0.5 text-[10px] font-black bg-rose-100 text-rose-700 rounded-full animate-pulse">
+                {pendingDues.length}
+              </span>
+            )}
           </button>
         </div>
 
@@ -775,6 +951,7 @@ export const Supplements: React.FC = () => {
                     <th className="p-3.5">Flavor / Size</th>
                     <th className="p-3.5 text-right">Cost (₹)</th>
                     <th className="p-3.5 text-right">Selling MRP (₹)</th>
+                    <th className="p-3.5 text-right">Unit Profit (₹)</th>
                     <th className="p-3.5 text-center">Available Stock</th>
                     <th className="p-3.5 text-right">Actions</th>
                   </tr>
@@ -782,7 +959,7 @@ export const Supplements: React.FC = () => {
                 <tbody className="divide-y divide-slate-100 text-slate-700">
                   {filteredProducts.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="text-center py-12 text-slate-400">
+                      <td colSpan={8} className="text-center py-12 text-slate-400">
                         <ShoppingBag className="w-8 h-8 mx-auto mb-2 text-slate-300" />
                         <p className="font-semibold">No supplement products found.</p>
                         <p className="text-[11px] mt-0.5">Click "Add Product" above to populate your inventory.</p>
@@ -792,6 +969,8 @@ export const Supplements: React.FC = () => {
                     filteredProducts.map((p) => {
                       const isLow = p.stock_quantity <= p.min_stock_alert;
                       const isOut = p.stock_quantity === 0;
+                      const unitProfit = Math.max(0, Number(p.selling_price) - Number(p.cost_price));
+                      const marginPct = Number(p.selling_price) > 0 ? Math.round((unitProfit / Number(p.selling_price)) * 100) : 0;
 
                       return (
                         <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
@@ -817,6 +996,15 @@ export const Supplements: React.FC = () => {
 
                           <td className="p-3.5 text-right font-mono font-bold text-slate-900 text-sm">
                             ₹{Number(p.selling_price).toLocaleString('en-IN')}
+                          </td>
+
+                          <td className="p-3.5 text-right font-mono">
+                            <span className="font-bold text-emerald-600 block text-xs">
+                              +₹{unitProfit.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-[10px] text-emerald-700 font-medium">
+                              {marginPct}% margin
+                            </span>
                           </td>
 
                           <td className="p-3.5 text-center">
@@ -877,40 +1065,69 @@ export const Supplements: React.FC = () => {
           </div>
         )}
 
-        {/* Tab 2: Sales History & Invoices */}
+        {/* Tab 2: Sales History & Receipts */}
         {activeTab === 'sales' && (
           <div className="p-6 space-y-4">
-            <div className="border border-slate-200 rounded-2xl overflow-hidden">
-              <table className="w-full text-left text-xs">
+            {/* Top Toolbar with Search */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-50 border border-slate-200/80 p-4 rounded-2xl">
+              <div>
+                <h3 className="font-bold font-heading text-slate-900 text-sm flex items-center gap-2">
+                  <Receipt className="w-4 h-4 text-orange-600" />
+                  <span>Supplement Payment Receipts</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Chronological record of every supplement payment and dues settlement receipt.
+                </p>
+              </div>
+
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search receipt #, customer, item..."
+                  value={salesSearchQuery}
+                  onChange={(e) => setSalesSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-orange-500"
+                />
+              </div>
+            </div>
+
+            {/* Receipts Table */}
+            <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
+              <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
                   <tr>
-                    <th className="p-3.5">Invoice #</th>
+                    <th className="p-3.5">Receipt #</th>
                     <th className="p-3.5">Date</th>
-                    <th className="p-3.5">Customer</th>
-                    <th className="p-3.5">Items Purchased</th>
-                    <th className="p-3.5 text-right">Final Amount</th>
-                    <th className="p-3.5">Payment Mode</th>
-                    <th className="p-3.5 text-right">Invoice</th>
+                    <th className="p-3.5">Member / Customer</th>
+                    <th className="p-3.5">Products / Items</th>
+                    <th className="p-3.5">Method & Ref</th>
+                    <th className="p-3.5 text-right">Amount Paid</th>
+                    <th className="p-3.5 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {sales.length === 0 ? (
+                  {filteredReceipts.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="text-center py-12 text-slate-400">
                         <ShoppingBag className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                        <p className="font-semibold">No supplement sales recorded yet.</p>
-                        <p className="text-[11px] mt-0.5">Click "New Sale / Billing" to generate your first invoice.</p>
+                        <p className="font-semibold text-slate-800 text-sm">No supplement receipts found.</p>
+                        <p className="text-[11px] mt-0.5 text-slate-500">
+                          {salesSearchQuery
+                            ? 'No receipts matched your search query.'
+                            : 'Click "New Sale / Billing" to record purchases and generate receipts.'}
+                        </p>
                       </td>
                     </tr>
                   ) : (
-                    sales.map((s) => (
-                      <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="p-3.5 font-mono font-bold text-slate-900 text-xs">
-                          {s.invoice_number}
+                    filteredReceipts.map((p) => (
+                      <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-3.5 font-mono font-bold text-orange-600 text-xs">
+                          {p.receipt_number}
                         </td>
 
                         <td className="p-3.5 text-slate-500 text-[11px]">
-                          {new Date(s.sale_date).toLocaleDateString('en-IN', {
+                          {new Date(p.payment_date).toLocaleDateString('en-IN', {
                             day: 'numeric',
                             month: 'short',
                             year: 'numeric',
@@ -918,37 +1135,210 @@ export const Supplements: React.FC = () => {
                         </td>
 
                         <td className="p-3.5">
-                          <span className="font-bold text-slate-900 block">{s.customer_name}</span>
-                          <span className="text-[10px] text-slate-400">{s.customer_phone || 'Walk-in'}</span>
+                          <span className="font-bold text-slate-900 block">{p.customer_name}</span>
+                          {p.member_id && (
+                            <span className="text-[10px] text-slate-400 font-mono block mt-0.5">
+                              {p.member_id}
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="p-3.5 max-w-xs">
+                          <span className="text-slate-700 font-medium block truncate">
+                            {p.items_summary || 'Supplements'}
+                          </span>
+                          {p.is_dues_payment && (
+                            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200 mt-0.5">
+                              Dues Settlement
+                            </span>
+                          )}
                         </td>
 
                         <td className="p-3.5">
-                          <span className="text-slate-700 font-medium">
-                            {s.items?.map((it) => `${it.product_name} (${it.quantity})`).join(', ') || 'Supplements'}
-                          </span>
+                          <span className="font-semibold text-slate-800 block">{p.payment_method}</span>
+                          {p.notes && (
+                            <span className="text-[10px] text-slate-400 font-mono block truncate max-w-[150px]">
+                              {p.notes}
+                            </span>
+                          )}
                         </td>
 
-                        <td className="p-3.5 text-right font-mono font-black text-emerald-700 text-sm">
-                          ₹{Number(s.final_amount).toLocaleString('en-IN')}
-                        </td>
-
-                        <td className="p-3.5">
-                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-bold text-[10px] border border-slate-200">
-                            {s.payment_method_display || s.payment_method}
-                          </span>
+                        <td className="p-3.5 text-right font-mono font-black text-emerald-600 text-sm">
+                          ₹{Number(p.amount).toLocaleString('en-IN')}
                         </td>
 
                         <td className="p-3.5 text-right">
                           <button
-                            onClick={() => handlePrintPastReceipt(s.id)}
-                            className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-200 transition-colors inline-flex items-center gap-1.5"
+                            onClick={() => handlePrintPastReceipt(p.sale, p.id)}
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5 ml-auto"
                           >
-                            <Printer className="w-3.5 h-3.5 text-slate-600" />
-                            <span>Print</span>
+                            <Printer className="w-3.5 h-3.5 text-orange-600" />
+                            <span>View & Print</span>
                           </button>
                         </td>
                       </tr>
                     ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 3: Pending Dues */}
+        {activeTab === 'pending_dues' && (
+          <div className="p-6 space-y-4">
+            {/* Top Toolbar */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-rose-50/60 border border-rose-200/80 p-4 rounded-2xl">
+              <div>
+                <h3 className="font-bold font-heading text-slate-900 text-sm flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-rose-600" />
+                  <span>Supplement Pending Accounts</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Track and collect outstanding dues for supplement sales. Receipts update instantly upon settlement.
+                </p>
+              </div>
+
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Search customer, phone, invoice..."
+                  value={duesSearchQuery}
+                  onChange={(e) => setDuesSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-rose-200 rounded-xl text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-rose-400"
+                />
+              </div>
+            </div>
+
+            {/* Dues Table */}
+            <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
+                  <tr>
+                    <th className="p-3.5">Invoice #</th>
+                    <th className="p-3.5">Sale Date</th>
+                    <th className="p-3.5">Customer / Member</th>
+                    <th className="p-3.5">Products Purchased</th>
+                    <th className="p-3.5 text-right">Net Bill</th>
+                    <th className="p-3.5 text-right">Amount Paid</th>
+                    <th className="p-3.5 text-right">Balance Due</th>
+                    <th className="p-3.5">Status</th>
+                    <th className="p-3.5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {pendingDues
+                    .filter((d) => {
+                      if (!duesSearchQuery.trim()) return true;
+                      const q = duesSearchQuery.toLowerCase().trim();
+                      return (
+                        d.invoice_number?.toLowerCase().includes(q) ||
+                        d.customer_name?.toLowerCase().includes(q) ||
+                        d.customer_phone?.toLowerCase().includes(q) ||
+                        d.member_code?.toLowerCase().includes(q)
+                      );
+                    })
+                    .length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="text-center py-12 text-slate-400">
+                        <CheckCircle2 className="w-10 h-10 mx-auto mb-2 text-emerald-500" />
+                        <p className="font-bold text-slate-800 text-sm">No Pending Dues!</p>
+                        <p className="text-[11px] mt-0.5 text-slate-500">
+                          {duesSearchQuery
+                            ? 'No supplement dues matched your search filter.'
+                            : 'All supplement customer balances are fully settled.'}
+                        </p>
+                      </td>
+                    </tr>
+                  ) : (
+                    pendingDues
+                      .filter((d) => {
+                        if (!duesSearchQuery.trim()) return true;
+                        const q = duesSearchQuery.toLowerCase().trim();
+                        return (
+                          d.invoice_number?.toLowerCase().includes(q) ||
+                          d.customer_name?.toLowerCase().includes(q) ||
+                          d.customer_phone?.toLowerCase().includes(q) ||
+                          d.member_code?.toLowerCase().includes(q)
+                        );
+                      })
+                      .map((d) => (
+                        <tr key={d.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="p-3.5 font-mono font-bold text-slate-900 text-xs">
+                            {d.invoice_number}
+                          </td>
+
+                          <td className="p-3.5 text-slate-500 text-[11px]">
+                            {new Date(d.sale_date).toLocaleDateString('en-IN', {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                            })}
+                          </td>
+
+                          <td className="p-3.5">
+                            <span className="font-bold text-slate-900 block">{d.customer_name}</span>
+                            <span className="text-[10px] text-slate-400 flex items-center gap-1.5 mt-0.5">
+                              {d.member_code && (
+                                <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 font-mono font-bold">
+                                  {d.member_code}
+                                </span>
+                              )}
+                              <span>{d.customer_phone || 'Walk-in'}</span>
+                            </span>
+                          </td>
+
+                          <td className="p-3.5 max-w-xs">
+                            <span className="text-slate-700 font-medium truncate block">
+                              {d.items?.map((it) => `${it.product_name} (${it.quantity})`).join(', ') || 'Supplements'}
+                            </span>
+                          </td>
+
+                          <td className="p-3.5 text-right font-mono font-bold text-slate-900 text-sm">
+                            ₹{Number(d.final_amount).toLocaleString('en-IN')}
+                          </td>
+
+                          <td className="p-3.5 text-right font-mono font-bold text-emerald-700 text-sm">
+                            ₹{Number(d.paid_amount).toLocaleString('en-IN')}
+                          </td>
+
+                          <td className="p-3.5 text-right font-mono font-black text-rose-600 text-sm">
+                            ₹{Number(d.pending_amount).toLocaleString('en-IN')}
+                          </td>
+
+                          <td className="p-3.5">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black border ${
+                              Number(d.paid_amount) > 0
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-rose-50 text-rose-700 border-rose-200'
+                            }`}>
+                              {Number(d.paid_amount) > 0 ? 'PARTIAL' : 'PENDING'}
+                            </span>
+                          </td>
+
+                          <td className="p-3.5 text-right">
+                            <div className="inline-flex items-center gap-2 justify-end">
+                              <button
+                                onClick={() => handleOpenCollectDue(d)}
+                                className="px-3.5 py-1.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all inline-flex items-center gap-1.5"
+                              >
+                                <CreditCard className="w-3.5 h-3.5" />
+                                <span>Collect Due</span>
+                              </button>
+
+                              <button
+                                onClick={() => handlePrintPastReceipt(d.id)}
+                                className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-[11px] border border-slate-200 transition-colors inline-flex items-center gap-1"
+                                title="View Receipt"
+                              >
+                                <Printer className="w-3.5 h-3.5 text-slate-600" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
                   )}
                 </tbody>
               </table>
@@ -1153,8 +1543,8 @@ export const Supplements: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Sale Date, Payment & Discount */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-100">
+                {/* Sale Date, Payment, Discount & Amount Paid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-slate-100">
                   <div>
                     <label className="block text-slate-700 font-bold mb-1">
                       Sale Date <span className="text-rose-600">*</span>
@@ -1177,6 +1567,8 @@ export const Supplements: React.FC = () => {
                     >
                       <option value="UPI">UPI</option>
                       <option value="CASH">Cash</option>
+                      <option value="CARD">Card</option>
+                      <option value="NET_BANKING">Net Banking</option>
                     </select>
                   </div>
 
@@ -1189,6 +1581,24 @@ export const Supplements: React.FC = () => {
                       onChange={(e) => setDiscountAmount(e.target.value)}
                       placeholder="0"
                       className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">
+                      Amount Paid Now (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max={calculateFinalTotal()}
+                      value={paidAmount}
+                      onChange={(e) => {
+                        setPaidAmount(e.target.value);
+                        setIsPaidAmountManuallyEdited(true);
+                      }}
+                      placeholder={calculateFinalTotal().toString()}
+                      className="w-full px-3 py-2.5 bg-white border border-emerald-300 rounded-xl text-slate-900 focus:outline-none focus:border-emerald-500 font-bold text-xs shadow-sm"
                     />
                   </div>
                 </div>
@@ -1205,23 +1615,53 @@ export const Supplements: React.FC = () => {
                 </div>
 
                 {/* Grand Total Summary Box */}
-                <div className="p-4 rounded-2xl bg-orange-50 border border-orange-100 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] text-orange-700 font-bold uppercase block">Net Amount to Collect</span>
-                    <span className="text-xl font-black text-slate-900 font-heading">
-                      ₹{calculateFinalTotal().toLocaleString('en-IN')}
-                    </span>
-                  </div>
+                {(() => {
+                  const finalTotal = calculateFinalTotal();
+                  const effectivePaid = paidAmount === '' ? finalTotal : Math.min(finalTotal, Math.max(0, parseFloat(paidAmount) || 0));
+                  const due = Math.max(0, finalTotal - effectivePaid);
 
-                  <div className="text-right text-[11px] text-slate-500">
-                    Gross: ₹{calculateGrossTotal().toLocaleString('en-IN')}
-                    {parseFloat(discountAmount) > 0 && (
-                      <span className="block text-orange-600 font-semibold">
-                        Discount: -₹{parseFloat(discountAmount).toLocaleString('en-IN')}
-                      </span>
-                    )}
-                  </div>
-                </div>
+                  return (
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <span className="text-[10px] text-slate-500 font-bold uppercase block">Net Bill Amount</span>
+                          <span className="text-xl font-black text-slate-900 font-heading">
+                            ₹{finalTotal.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+
+                        <div className="text-right text-[11px] text-slate-500">
+                          Gross: ₹{calculateGrossTotal().toLocaleString('en-IN')}
+                          {parseFloat(discountAmount) > 0 && (
+                            <span className="block text-orange-600 font-semibold">
+                              Discount: -₹{parseFloat(discountAmount).toLocaleString('en-IN')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-600 font-medium">Paying Now:</span>
+                          <span className="font-mono font-bold text-emerald-700 text-sm">
+                            ₹{effectivePaid.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-600 font-medium">Balance Due:</span>
+                          <span className={`font-mono font-black text-sm px-2 py-0.5 rounded-lg border ${
+                            due > 0
+                              ? 'text-rose-600 bg-rose-50 border-rose-200'
+                              : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                          }`}>
+                            ₹{due.toLocaleString('en-IN')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Actions */}
@@ -1761,6 +2201,116 @@ export const Supplements: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Collect Due Payment Modal */}
+      <Modal
+        isOpen={isCollectModalOpen}
+        onClose={() => setIsCollectModalOpen(false)}
+        title="Collect Supplement Balance Due"
+        subtitle={collectTargetSale ? `Invoice #${collectTargetSale.invoice_number} • ${collectTargetSale.customer_name}` : ''}
+        maxWidth="md"
+      >
+        <form onSubmit={handleConfirmCollectDue} className="space-y-4 text-xs">
+          {collectError && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+              <span>{collectError}</span>
+            </div>
+          )}
+
+          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1.5">
+            <div className="flex justify-between items-center text-slate-600">
+              <span>Total Bill Amount:</span>
+              <span className="font-bold text-slate-900">
+                ₹{Number(collectTargetSale?.final_amount || 0).toLocaleString('en-IN')}
+              </span>
+            </div>
+            <div className="flex justify-between items-center text-slate-600">
+              <span>Already Paid:</span>
+              <span className="font-bold text-emerald-700">
+                ₹{Number(collectTargetSale?.paid_amount || 0).toLocaleString('en-IN')}
+              </span>
+            </div>
+            <div className="flex justify-between items-center pt-1.5 border-t border-slate-200">
+              <span className="font-bold text-slate-800">Remaining Balance Due:</span>
+              <span className="font-black text-rose-600 text-base font-mono">
+                ₹{Number(collectTargetSale?.pending_amount || 0).toLocaleString('en-IN')}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-slate-700 font-bold mb-1">
+              Payment Amount to Collect (₹) <span className="text-slate-400 font-normal">(Can be partial or full)</span>
+            </label>
+            <input
+              type="number"
+              min="1"
+              max={collectTargetSale ? Number(collectTargetSale.pending_amount) : 99999}
+              value={collectAmount}
+              onChange={(e) => setCollectAmount(e.target.value)}
+              className="w-full px-3.5 py-2.5 bg-white border-2 border-orange-400 rounded-xl text-slate-900 font-black text-base font-mono focus:outline-none focus:border-orange-500 shadow-sm"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-slate-700 font-bold mb-1">Payment Date</label>
+              <input
+                type="date"
+                value={collectDate}
+                onChange={(e) => setCollectDate(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold text-xs cursor-pointer"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-700 font-bold mb-1">Payment Method</label>
+              <select
+                value={collectMethod}
+                onChange={(e) => setCollectMethod(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 font-bold text-xs"
+              >
+                <option value="UPI">UPI</option>
+                <option value="CASH">Cash</option>
+                <option value="CARD">Card</option>
+                <option value="NET_BANKING">Net Banking</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-slate-700 font-bold mb-1">Payment Notes / Ref No. (Optional)</label>
+            <input
+              type="text"
+              value={collectNotes}
+              onChange={(e) => setCollectNotes(e.target.value)}
+              placeholder="e.g. GPay / UTR / Cash at front desk"
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:border-orange-500 text-xs"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setIsCollectModalOpen(false)}
+              className="px-4 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 font-bold transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmittingCollect || !collectAmount}
+              className="px-5 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <CreditCard className="w-4 h-4" />
+              <span>{isSubmittingCollect ? 'Processing Payment...' : 'Record Payment & Print Receipt'}</span>
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Printable Receipt Modal */}
       {activeReceipt && (

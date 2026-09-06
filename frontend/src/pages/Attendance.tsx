@@ -9,6 +9,7 @@ import {
 import { Attendance as AttendanceType } from '../types';
 import { api } from '../services/api';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { getTodayDateString } from '../utils/date';
 
 interface AttendanceProps {
   onOpenScanner: () => void;
@@ -21,7 +22,7 @@ export const Attendance: React.FC<AttendanceProps> = ({
 }) => {
   const [records, setRecords] = useState<AttendanceType[]>([]);
   const [stats, setStats] = useState<any | null>(null);
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayDateString());
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -165,7 +166,7 @@ export const Attendance: React.FC<AttendanceProps> = ({
             className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 focus:outline-none focus:border-orange-500 focus:bg-white"
           />
           <button
-            onClick={() => setSelectedDate(new Date().toISOString().split('T')[0])}
+            onClick={() => setSelectedDate(getTodayDateString())}
             className="px-3 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 rounded-xl border border-slate-200 font-semibold"
           >
             Today

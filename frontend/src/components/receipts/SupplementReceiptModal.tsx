@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import {
-  Printer, X, CheckCircle2, ShoppingBag,
+  Printer, X, CheckCircle2,
   MessageSquare, RefreshCw
 } from 'lucide-react';
 import { SupplementReceiptData } from '../../types';
 import { api } from '../../services/api';
-import { useToast } from '../../context/ToastContext';
 import { generatePdfFromElement } from '../../utils/receiptPdfGenerator';
 
 interface SupplementReceiptModalProps {
@@ -14,30 +13,164 @@ interface SupplementReceiptModalProps {
 }
 
 export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ receipt, onClose }) => {
-  const { showToast } = useToast();
-  const gymName = receipt.gym?.name || 'Morya Fitness';
+  if (!receipt) return null;
+
+  // Safe Gym Properties (matching PaymentReceipt.tsx)
+  const gymName = (receipt.gym?.name || 'Morya Fitness').toUpperCase();
   const gymTagline = receipt.gym?.tagline || 'Premium Gym & Fitness Center';
   const gymAddress = receipt.gym?.address || 'Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103';
   const gymPhone = receipt.gym?.phone || '+91 7219188002';
-  const gymUpi = receipt.gym?.upi_id || 'moryafitness@okhdfcbank';
+  const gymUpi = receipt.gym?.upi_id || '7219188002@ybl';
 
-  // Strict UPI or Cash
+  // Strict UPI or Cash formatting (no extra text)
   const formatPaymentMethod = (method: any): 'UPI' | 'Cash' => {
     if (!method) return 'UPI';
     const s = String(method).toUpperCase();
     if (s.includes('CASH')) return 'Cash';
     return 'UPI';
   };
-  const paymentMethod = formatPaymentMethod(receipt.payment_method);
+
+  // Support switching between full sale invoice and individual dues payment installment
+  const [selectedPaymentId, setSelectedPaymentId] = useState<number | null>(() => {
+    if (receipt.payment_id) return receipt.payment_id;
+    if (receipt.payments && receipt.payments.length > 0) {
+      return receipt.payments[receipt.payments.length - 1].id;
+    }
+    return null;
+  });
+
+  React.useEffect(() => {
+    if (receipt.payment_id) {
+      setSelectedPaymentId(receipt.payment_id);
+    } else if (receipt.payments && receipt.payments.length > 0) {
+      setSelectedPaymentId(receipt.payments[receipt.payments.length - 1].id);
+    } else {
+      setSelectedPaymentId(null);
+    }
+  }, [receipt.id, receipt.payment_id, receipt.receipt_number]);
+
+  const activePayment = React.useMemo(() => {
+    if (selectedPaymentId && receipt.payments) {
+      return receipt.payments.find(p => p.id === selectedPaymentId) || null;
+    }
+    return null;
+  }, [selectedPaymentId, receipt.payments]);
+
+  const currentReceiptNo = activePayment
+    ? activePayment.receipt_number
+    : (receipt.receipt_number || receipt.invoice_number || 'MF-SUP-2026-0001');
+
+  const rawPaymentDate = activePayment
+    ? activePayment.payment_date
+    : (receipt.payment_date || receipt.date || (receipt.sale_date ? receipt.sale_date.split(' ')[0] : new Date().toISOString()));
+
+  const formattedDate = (() => {
+    try {
+      const d = new Date(rawPaymentDate);
+      if (isNaN(d.getTime())) return String(rawPaymentDate);
+      return d.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+    } catch {
+      return String(rawPaymentDate);
+    }
+  })();
+
+  const currentPaymentMethod = formatPaymentMethod(
+    activePayment ? activePayment.payment_method : receipt.payment_method
+  );
+
+  const customerName = receipt.customer_name || 'Walk-in Customer';
+  const customerPhone = receipt.customer_phone || '';
+  const memberId = receipt.member_id || '';
+  const cashierName = activePayment?.received_by_name || receipt.sold_by || 'Gokul Gugale';
+
+  // Safe Financial Computations
+  const subtotal = Number(receipt.subtotal || 0);
+  const discount = Number(receipt.discount || 0);
+  const finalPayable = Number(receipt.final_amount ?? Math.max(0, subtotal - discount));
+
+  // Determine if this receipt is a Dues Collection Receipt (2nd payment or later)
+  const isDuesReceipt = activePayment
+    ? Boolean(activePayment.is_dues_payment)
+    : Boolean(receipt.is_dues_payment || receipt.receipt_type === 'DUES_RECEIPT');
+
+  const alreadyPaid = activePayment
+    ? Number(activePayment.prior_paid ?? 0)
+    : Number(receipt.already_paid ?? receipt.initial_paid_amount ?? 0);
+
+  const duesPaid = activePayment
+    ? Number(activePayment.amount)
+    : Number(receipt.this_payment_amount ?? receipt.dues_paid_amount ?? 0);
+
+  const totalAmountPaid = isDuesReceipt
+    ? (activePayment
+        ? Number(activePayment.total_paid_to_date ?? (alreadyPaid + duesPaid))
+        : Number(receipt.total_paid_amount ?? (alreadyPaid + duesPaid)))
+    : (activePayment
+        ? Number(activePayment.amount)
+        : Number(receipt.this_payment_amount ?? receipt.paid_amount ?? finalPayable));
+
+  const remainingDues = activePayment
+    ? Math.max(0, finalPayable - totalAmountPaid)
+    : Number(receipt.pending_amount ?? Math.max(0, finalPayable - totalAmountPaid));
+
+  // Filter out any system-generated collection log text from notes
+  const cleanNotes = receipt.notes
+    ? receipt.notes
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l && !/\[.*?\]\s*Collected\s*.*?(?:via|$)/i.test(l))
+        .join('\n')
+    : '';
 
   const [isSending, setIsSending] = useState(false);
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+
+  const getDefaultWhatsAppMessage = () => {
+    const itemsText = receipt.items
+      .map((item, idx) => `${idx + 1}. *${item.name}* (Qty: ${item.quantity}) — ₹${item.subtotal.toLocaleString('en-IN')}`)
+      .join('\n');
+
+    let paymentBreakdownText = `💰 *Net Payable:* ₹${finalPayable.toLocaleString('en-IN')}\n`;
+    if (isDuesReceipt) {
+      paymentBreakdownText +=
+        `💵 *Already Paid:* ₹${alreadyPaid.toLocaleString('en-IN')}\n` +
+        `💳 *Pending Dues Paid:* ₹${duesPaid.toLocaleString('en-IN')}\n` +
+        `✅ *Total Amount Paid:* ₹${totalAmountPaid.toLocaleString('en-IN')}\n`;
+    } else {
+      paymentBreakdownText += `✅ *Amount Paid:* ₹${totalAmountPaid.toLocaleString('en-IN')}\n`;
+    }
+
+    if (remainingDues > 0) {
+      paymentBreakdownText += `⚠️ *Balance Due:* ₹${remainingDues.toLocaleString('en-IN')}\n`;
+    } else {
+      paymentBreakdownText += `✅ *Payment Status:* Paid in Full\n`;
+    }
+
+    return `🏋️‍♂️ *${gymName} — OFFICIAL RECEIPT*\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Dear *${customerName}*,\n\n` +
+      `Thank you for your payment at *${receipt.gym?.name || 'Morya Fitness'}*! Here are your official receipt details:\n\n` +
+      `📄 *Receipt No:* ${currentReceiptNo}\n` +
+      `📅 *Date:* ${formattedDate}\n` +
+      `💳 *Payment Mode:* ${currentPaymentMethod}\n` +
+      `👤 *Cashier:* ${cashierName}\n\n` +
+      `*Purchased Items:*\n${itemsText}\n\n` +
+      paymentBreakdownText +
+      `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📍 *Address:* ${gymAddress}\n` +
+      `📞 *Helpdesk:* ${gymPhone} | UPI: ${gymUpi}\n\n` +
+      `_Welcome to ${receipt.gym?.name || 'Morya Fitness'}! Stay fit & achieve your fitness goals!_ 🏆`;
+  };
 
   const handleSendWhatsApp = async () => {
     setIsSending(true);
     setNoticeMessage(null);
     try {
-      const rawPhone = receipt.customer_phone || '';
+      const rawPhone = customerPhone || '';
       const cleanPhone = String(rawPhone).replace(/\D/g, '');
       const phoneWithCountry = cleanPhone.startsWith('91') && cleanPhone.length === 12
         ? cleanPhone
@@ -45,30 +178,14 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
           ? `91${cleanPhone}`
           : cleanPhone;
 
-      const itemsText = receipt.items
-        .map((item, idx) => `${idx + 1}. *${item.name}* (Qty: ${item.quantity}) — ₹${item.subtotal.toLocaleString('en-IN')}`)
-        .join('\n');
+      const message = getDefaultWhatsAppMessage();
 
-      const message = `🛍️ *${gymName.toUpperCase()} — SUPPLEMENT INVOICE*\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `Dear *${receipt.customer_name}*,\n\n` +
-        `Thank you for your supplement purchase at *${gymName}*! Here are your invoice details:\n\n` +
-        `📄 *Invoice No:* ${receipt.invoice_number}\n` +
-        `📅 *Date:* ${receipt.date || receipt.sale_date?.split(' ')[0] || receipt.sale_date}\n` +
-        `💳 *Payment Mode:* ${paymentMethod}\n\n` +
-        `*Purchased Items:*\n${itemsText}\n\n` +
-        `💰 *Total Amount Paid:* ₹${receipt.final_amount.toLocaleString('en-IN')}\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `📍 *Store:* ${gymAddress}\n` +
-        `📞 *Helpdesk:* ${gymPhone}\n\n` +
-        `_Authentic fitness supplements guaranteed by ${gymName}!_ 💪`;
-
-      const fileName = `Invoice_${receipt.invoice_number}.pdf`;
+      const fileName = `Receipt_${currentReceiptNo}.pdf`;
       let pdfFile: File | null = null;
 
-      // 1. Generate exact 1:1 pixel-perfect PDF directly from the on-screen invoice card DOM
+      // 1. Generate exact 1:1 pixel-perfect PDF directly from the on-screen receipt card DOM
       try {
-        pdfFile = await generatePdfFromElement('printable-supplement-invoice', fileName);
+        pdfFile = await generatePdfFromElement('printable-receipt', fileName);
       } catch (domErr) {
         console.warn('DOM PDF generation failed, falling back to backend:', domErr);
       }
@@ -77,10 +194,10 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
       if (!pdfFile) {
         try {
           const saleIdentifier = (receipt as any).id || (receipt as any).sale_id || receipt.invoice_number;
-          const blob = await api.getSupplementInvoicePdf(saleIdentifier);
+          const blob = await api.getSupplementInvoicePdf(saleIdentifier, activePayment ? activePayment.id : undefined);
           pdfFile = new File([blob], fileName, { type: 'application/pdf' });
-        } catch (e) {
-          console.warn('Invoice PDF fetch error:', e);
+        } catch (pdfErr) {
+          console.warn('Could not fetch PDF blob ahead of sharing:', pdfErr);
         }
       }
 
@@ -89,13 +206,13 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
         try {
           await navigator.share({
             files: [pdfFile],
-            title: `Supplement Invoice - ${receipt.invoice_number}`,
+            title: `Fee Receipt - ${currentReceiptNo}`,
             text: message,
           });
           return;
         } catch (shareErr: any) {
           if (shareErr.name === 'AbortError') return;
-          console.warn('Native share failed, proceeding with desktop fallback:', shareErr);
+          console.warn('Native share cancelled or failed, using desktop fallback:', shareErr);
         }
       }
 
@@ -110,12 +227,13 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
           a.click();
           document.body.removeChild(a);
           setTimeout(() => window.URL.revokeObjectURL(url), 10000);
-          setNoticeMessage(`Invoice PDF "${fileName}" downloaded! In WhatsApp Web, simply drag & drop the PDF into the chat or attach as Document.`);
+          setNoticeMessage(`Receipt PDF "${fileName}" downloaded! In WhatsApp Web, simply drag & drop the PDF into the chat or attach as Document.`);
         } catch (e) {
-          console.warn('Auto-download error:', e);
+          console.warn('PDF auto-download error:', e);
         }
       }
 
+      // 3. Open WhatsApp chat directly with prefilled message
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       const encodedText = encodeURIComponent(message);
       const whatsappUrl = isMobile
@@ -129,14 +247,14 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
   };
 
   const handlePrint = () => {
-    const el = document.getElementById('printable-supplement-invoice');
+    const el = document.getElementById('printable-receipt');
     if (!el) {
       window.print();
       return;
     }
     const printWindow = window.open('', '_blank', 'width=800,height=900');
     if (!printWindow) {
-      showToast('Please allow popups in your browser to print the invoice.', 'error');
+      window.print();
       return;
     }
 
@@ -145,8 +263,8 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
       <!DOCTYPE html>
       <html>
         <head>
-          <meta charset="utf-8" />
-          <title>Invoice_${receipt.invoice_number}</title>
+          <meta charset="utf-8">
+          <title>Receipt_${currentReceiptNo}</title>
           <style>
             @page {
               size: A4 portrait;
@@ -189,9 +307,13 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
       <div className="relative w-full max-w-2xl bg-white rounded-3xl border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         {/* Header Bar */}
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-          <div className="flex items-center gap-2 text-slate-800">
-            <ShoppingBag className="w-5 h-5 text-orange-600" />
-            <h3 className="font-bold font-heading text-sm sm:text-base">Supplement Sales Receipt</h3>
+          <div>
+            <h3 className="font-bold font-heading text-sm sm:text-base text-slate-800">
+              Payment & Tax Receipt
+            </h3>
+            <p className="text-xs text-slate-500">
+              Receipt #{currentReceiptNo}
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -203,9 +325,9 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
 
         {/* Receipt Scroll Area */}
         <div className="p-4 sm:p-6 max-h-[75vh] overflow-y-auto bg-slate-50/50">
-          {/* On-Screen Invoice Preview Card: 100% Identical Replica for Screen, Print & PDF */}
+          {/* On-Screen Receipt Preview Card: 100% Identical Replica for Screen, Print & PDF */}
           <div
-            id="printable-supplement-invoice"
+            id="printable-receipt"
             style={{
               maxWidth: '650px',
               margin: '0 auto',
@@ -233,7 +355,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                 <img
                   src="/logo.png"
-                  alt="Logo"
+                  alt="Morya Fitness"
                   style={{
                     width: '56px',
                     height: '56px',
@@ -252,7 +374,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                     letterSpacing: '-0.5px',
                     textTransform: 'uppercase',
                   }}>
-                    {gymName.toUpperCase()}
+                    {gymName}
                   </div>
                   <div style={{
                     fontSize: '11px',
@@ -289,7 +411,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
                 }}>
-                  OFFICIAL RETAIL INVOICE
+                  OFFICIAL RECEIPT
                 </div>
                 <div style={{
                   fontFamily: 'monospace',
@@ -298,19 +420,19 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                   color: '#0f172a',
                   marginTop: '2px',
                 }}>
-                  {receipt.invoice_number}
+                  {currentReceiptNo}
                 </div>
                 <div style={{
                   fontSize: '11px',
                   color: '#64748b',
                   marginTop: '2px',
                 }}>
-                  Date: {receipt.date || (receipt.sale_date ? receipt.sale_date.split(' ')[0] : '')}
+                  Date: {formattedDate}
                 </div>
               </div>
             </div>
 
-            {/* Billed To & Payment Details */}
+            {/* Member / Customer Details & Received By Info */}
             <div style={{
               display: 'grid',
               gridTemplateColumns: '1fr 1fr',
@@ -330,18 +452,18 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                   letterSpacing: '0.5px',
                   marginBottom: '4px',
                 }}>
-                  BILLED TO
+                  RECEIVED FROM
                 </div>
                 <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
-                  {receipt.customer_name}
+                  {customerName}
                 </div>
-                {receipt.member_id && (
+                {memberId && (
                   <div style={{ fontSize: '12px', color: '#334155', marginTop: '2px' }}>
-                    Member ID: <strong style={{ color: '#0f172a' }}>{receipt.member_id}</strong>
+                    Member ID: <strong style={{ color: '#0f172a' }}>{memberId}</strong>
                   </div>
                 )}
                 <div style={{ fontSize: '12px', color: '#334155', marginTop: '2px' }}>
-                  Mobile: +91 {receipt.customer_phone || '—'}
+                  Mobile: +91 {customerPhone || '—'}
                 </div>
               </div>
 
@@ -357,20 +479,20 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                   PAYMENT DETAILS
                 </div>
                 <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
-                  {paymentMethod}
+                  {currentPaymentMethod}
                 </div>
                 <div style={{ fontSize: '12px', color: '#334155', marginTop: '2px' }}>
-                  Cashier: {receipt.sold_by || 'Gokul Gugale'}
+                  Cashier: {cashierName}
                 </div>
-                {receipt.notes && (
+                {cleanNotes ? (
                   <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                    Note: {receipt.notes}
+                    Note: {cleanNotes}
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
 
-            {/* Itemized Products Table */}
+            {/* Itemized Table */}
             <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
               <thead>
                 <tr>
@@ -384,7 +506,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                     textAlign: 'left',
                     borderBottom: '1px solid #cbd5e1',
                   }}>
-                    ITEM DESCRIPTION
+                    ITEM PARTICULARS
                   </th>
                   <th style={{
                     background: '#f1f5f9',
@@ -410,7 +532,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                     borderBottom: '1px solid #cbd5e1',
                     width: '100px',
                   }}>
-                    UNIT PRICE
+                    RATE (INR)
                   </th>
                   <th style={{
                     background: '#f1f5f9',
@@ -488,10 +610,10 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                   color: '#475569',
                 }}>
                   <span>Subtotal:</span>
-                  <span>₹{receipt.subtotal.toLocaleString('en-IN')}</span>
+                  <span>₹{subtotal.toLocaleString('en-IN')}</span>
                 </div>
 
-                {receipt.discount > 0 && (
+                {discount > 0 && (
                   <div style={{
                     display: 'flex',
                     justifyContent: 'space-between',
@@ -500,8 +622,8 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                     color: '#15803d',
                     fontWeight: 600,
                   }}>
-                    <span>Discount:</span>
-                    <span>-₹{receipt.discount.toLocaleString('en-IN')}</span>
+                    <span>Discount Applied:</span>
+                    <span>-₹{discount.toLocaleString('en-IN')}</span>
                   </div>
                 )}
 
@@ -516,42 +638,134 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
                   marginTop: '4px',
                 }}>
                   <span>Net Payable:</span>
-                  <span>₹{receipt.final_amount.toLocaleString('en-IN')}</span>
+                  <span>₹{finalPayable.toLocaleString('en-IN')}</span>
                 </div>
+
+                {isDuesReceipt ? (
+                  <>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontSize: '12px',
+                      padding: '4px 0',
+                      color: '#475569',
+                      marginTop: '4px',
+                    }}>
+                      <span>Already Paid:</span>
+                      <span style={{ fontWeight: 700, color: '#0f172a' }}>
+                        ₹{alreadyPaid.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontSize: '12px',
+                      padding: '4px 0',
+                      color: '#475569',
+                    }}>
+                      <span>Pending Dues:</span>
+                      <span style={{ fontWeight: 700, color: '#0f172a' }}>
+                        ₹{duesPaid.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: '14px',
+                      fontWeight: 900,
+                      color: '#15803d',
+                      background: '#f0fdf4',
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      border: '1px solid #bbf7d0',
+                      marginTop: '6px',
+                    }}>
+                      <span>Total Amount Paid (INR):</span>
+                      <span>₹{totalAmountPaid.toLocaleString('en-IN')}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: '14px',
+                    fontWeight: 900,
+                    color: '#15803d',
+                    background: '#f0fdf4',
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid #bbf7d0',
+                    marginTop: '6px',
+                  }}>
+                    <span>Amount Paid (INR):</span>
+                    <span>₹{totalAmountPaid.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+
+                {remainingDues > 0 && (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    color: '#b91c1c',
+                    background: '#fef2f2',
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    border: '1px solid #fecaca',
+                    marginTop: '6px',
+                  }}>
+                    <span>Balance Due:</span>
+                    <span>₹{remainingDues.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
 
                 <div style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  fontSize: '14px',
-                  fontWeight: 900,
-                  color: '#15803d',
-                  background: '#f0fdf4',
-                  padding: '6px 10px',
-                  borderRadius: '6px',
-                  border: '1px solid #bbf7d0',
-                  marginTop: '6px',
-                }}>
-                  <span>Amount Paid (INR):</span>
-                  <span>₹{receipt.final_amount.toLocaleString('en-IN')}</span>
-                </div>
-
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
                   fontSize: '11px',
-                  color: '#15803d',
                   fontWeight: 'bold',
-                  padding: '4px 0',
-                  marginTop: '4px',
+                  padding: '6px 0 2px',
+                  marginTop: '6px',
+                  borderTop: '1px dashed #e2e8f0',
                 }}>
-                  <span>Payment Status:</span>
-                  <span>✓ Paid in Full</span>
+                  <span style={{ color: '#475569' }}>Payment Status:</span>
+                  {remainingDues > 0 ? (
+                    <span style={{
+                      color: '#b45309',
+                      background: '#fef3c7',
+                      padding: '2px 8px',
+                      borderRadius: '9999px',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      border: '1px solid #fde68a',
+                    }}>
+                      Partially Paid
+                    </span>
+                  ) : (
+                    <span style={{
+                      color: '#15803d',
+                      background: '#dcfce7',
+                      padding: '2px 8px',
+                      borderRadius: '9999px',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      border: '1px solid #bbf7d0',
+                    }}>
+                      ✓ Paid in Full
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
 
-            {/* Terms & Authorized Stamp */}
+            {/* Terms & Authorized Stamp (Exact match to PaymentReceipt.tsx) */}
             <div style={{
               borderTop: '1px dashed #cbd5e1',
               paddingTop: '16px',
@@ -561,11 +775,11 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
             }}>
               <div style={{ fontSize: '10px', color: '#64748b', lineHeight: '1.4', maxWidth: '60%' }}>
                 <strong style={{ color: '#475569', display: 'block', marginBottom: '2px' }}>
-                  Store Terms & Policies:
+                  Terms & Conditions:
                 </strong>
-                1. Authentic fitness supplements guaranteed by {gymName}.<br />
-                2. Opened or unsealed products are non-returnable.<br />
-                3. Official computer-generated retail invoice for Morya Fitness, Sinnar.
+                1. Fees and purchases once paid are non-refundable and non-transferable.<br />
+                2. Please maintain gym hygiene, discipline, and equipment care.<br />
+                3. Official computer-generated receipt for Morya Fitness, Sinnar.
               </div>
 
               <div style={{ textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
@@ -645,13 +859,13 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
           </div>
         )}
 
-        {/* Action Buttons */}
+        {/* Action Buttons (Exact match to PaymentReceipt.tsx) */}
         <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3 flex-wrap">
           <button
             onClick={handleSendWhatsApp}
             disabled={isSending}
-            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 flex items-center gap-2 transition-all disabled:opacity-60"
-            title="Send PDF Invoice via WhatsApp"
+            className="py-2.5 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-600/20 transition-all flex items-center gap-2 disabled:opacity-60"
+            title="Send PDF Receipt to WhatsApp"
           >
             {isSending ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -663,7 +877,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
 
           <button
             onClick={handlePrint}
-            className="px-5 py-2.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-black text-xs shadow-md shadow-orange-500/20 flex items-center gap-2 transition-all"
+            className="py-2.5 px-4 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs rounded-xl shadow-md shadow-orange-500/20 transition-all flex items-center gap-2"
           >
             <Printer className="w-4 h-4" />
             <span>Print</span>
@@ -671,7 +885,7 @@ export const SupplementReceiptModal: React.FC<SupplementReceiptModalProps> = ({ 
 
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-200 font-bold text-xs transition-colors"
+            className="py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition-colors"
           >
             Close
           </button>

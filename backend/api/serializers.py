@@ -2,13 +2,15 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 import re
+from django.db.models import Sum
 from datetime import date, timedelta
 from decimal import Decimal
 from .models import (
     User, GymSettings, Trainer, MembershipPlan, Member,
     MemberMembership, Payment, Attendance, WorkoutPlan,
     WorkoutExercise, Expense, ExpenseCategory, AuditLog,
-    SupplementCategory, SupplementProduct, SupplementSale, SupplementSaleItem
+    SupplementCategory, SupplementProduct, SupplementSale, SupplementSaleItem,
+    SupplementPayment
 )
 
 class UserSerializer(serializers.ModelSerializer):
@@ -47,11 +49,18 @@ class PaymentSerializer(serializers.ModelSerializer):
     received_by_name = serializers.ReadOnlyField(source='received_by.get_full_name')
     plan_name = serializers.ReadOnlyField(source='membership.plan.name')
     plan_description = serializers.ReadOnlyField(source='membership.plan.description')
+    is_dues_payment = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
         fields = '__all__'
         read_only_fields = ['receipt_number', 'created_at']
+
+    def get_is_dues_payment(self, obj):
+        if not obj.membership_id:
+            return False
+        first_p = Payment.objects.filter(membership_id=obj.membership_id).order_by('created_at', 'id').first()
+        return bool(first_p and obj.id != first_p.id)
 
     def create(self, validated_data):
         if not validated_data.get('receipt_number'):
@@ -443,20 +452,85 @@ class SupplementSaleItemSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'product_name', 'product_brand', 'cost_price', 'subtotal']
 
 
+class SupplementPaymentSerializer(serializers.ModelSerializer):
+    received_by_name = serializers.ReadOnlyField(source='received_by.get_full_name')
+    customer_name = serializers.ReadOnlyField(source='sale.customer_name')
+    customer_phone = serializers.ReadOnlyField(source='sale.customer_phone')
+    member_id = serializers.ReadOnlyField(source='sale.member.member_id')
+    invoice_number = serializers.ReadOnlyField(source='sale.invoice_number')
+    final_amount = serializers.DecimalField(source='sale.final_amount', max_digits=10, decimal_places=2, read_only=True)
+    pending_amount = serializers.DecimalField(source='sale.pending_amount', max_digits=10, decimal_places=2, read_only=True)
+    items_summary = serializers.SerializerMethodField()
+    is_dues_payment = serializers.SerializerMethodField()
+    prior_paid = serializers.SerializerMethodField()
+    total_paid_to_date = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SupplementPayment
+        fields = [
+            'id', 'receipt_number', 'sale', 'invoice_number', 'customer_name', 'customer_phone',
+            'member_id', 'items_summary', 'final_amount', 'pending_amount', 'amount',
+            'is_dues_payment', 'prior_paid', 'total_paid_to_date',
+            'payment_method', 'payment_date', 'notes', 'received_by',
+            'received_by_name', 'created_at'
+        ]
+        read_only_fields = ['receipt_number', 'created_at']
+
+    def get_items_summary(self, obj):
+        items = obj.sale.items.all()
+        if not items:
+            return 'Supplements'
+        return ", ".join([f"{item.product_name} (x{item.quantity})" for item in items])
+
+    def get_is_dues_payment(self, obj):
+        first_payment = obj.sale.payments.order_by('payment_date', 'created_at', 'id').first()
+        return first_payment is not None and obj.id != first_payment.id
+
+    def get_prior_paid(self, obj):
+        prior = obj.sale.payments.filter(id__lt=obj.id).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+        return float(prior)
+
+    def get_total_paid_to_date(self, obj):
+        to_date = obj.sale.payments.filter(id__lte=obj.id).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+        return float(to_date)
+
+
 class SupplementSaleSerializer(serializers.ModelSerializer):
     items = SupplementSaleItemSerializer(many=True)
+    payments = SupplementPaymentSerializer(many=True, read_only=True)
     sold_by_name = serializers.ReadOnlyField(source='sold_by.get_full_name')
+    member_code = serializers.ReadOnlyField(source='member.member_id')
+    payment_status_display = serializers.CharField(source='get_payment_status_display', read_only=True)
     payment_method_display = serializers.CharField(source='get_payment_method_display', read_only=True)
+    dues_paid_amount = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    has_collected_dues = serializers.BooleanField(read_only=True)
+    total_cost = serializers.SerializerMethodField()
+    profit = serializers.SerializerMethodField()
+    profit_margin = serializers.SerializerMethodField()
 
     class Meta:
         model = SupplementSale
         fields = [
-            'id', 'invoice_number', 'member', 'customer_name', 'customer_phone',
-            'subtotal', 'discount', 'final_amount', 'payment_method',
+            'id', 'invoice_number', 'member', 'member_code', 'customer_name', 'customer_phone',
+            'subtotal', 'discount', 'final_amount', 'paid_amount', 'initial_paid_amount',
+            'dues_paid_amount', 'has_collected_dues', 'pending_amount',
+            'payment_status', 'payment_status_display', 'payment_method',
             'payment_method_display', 'sold_by', 'sold_by_name', 'sale_date',
-            'notes', 'items', 'created_at'
+            'notes', 'items', 'payments', 'total_cost', 'profit', 'profit_margin', 'created_at'
         ]
-        read_only_fields = ['id', 'invoice_number', 'subtotal', 'final_amount', 'created_at']
+        read_only_fields = ['id', 'invoice_number', 'subtotal', 'final_amount', 'initial_paid_amount', 'dues_paid_amount', 'has_collected_dues', 'pending_amount', 'payment_status', 'total_cost', 'profit', 'profit_margin', 'created_at']
+
+    def get_total_cost(self, obj):
+        return float(sum([item.quantity * item.cost_price for item in obj.items.all()]))
+
+    def get_profit(self, obj):
+        cost = sum([item.quantity * item.cost_price for item in obj.items.all()])
+        return float(obj.final_amount - cost)
+
+    def get_profit_margin(self, obj):
+        cost = sum([item.quantity * item.cost_price for item in obj.items.all()])
+        prof = obj.final_amount - cost
+        return round(float(prof / obj.final_amount * 100), 1) if obj.final_amount > 0 else 0.0
 
     def create(self, validated_data):
         items_data = validated_data.pop('items', [])
@@ -501,9 +575,29 @@ class SupplementSaleSerializer(serializers.ModelSerializer):
 
         validated_data['subtotal'] = calculated_subtotal
         validated_data['final_amount'] = final_amount
+        raw_paid = validated_data.get('paid_amount')
+        if raw_paid is None:
+            validated_data['paid_amount'] = final_amount
+            validated_data['initial_paid_amount'] = final_amount
+        else:
+            p_val = min(final_amount, max(Decimal('0.00'), Decimal(str(raw_paid))))
+            validated_data['paid_amount'] = p_val
+            validated_data['initial_paid_amount'] = p_val
 
         # Create the Sale
         sale = SupplementSale.objects.create(**validated_data)
+
+        # Record Initial Payment if any amount paid
+        if sale.paid_amount > Decimal('0.00'):
+            SupplementPayment.objects.create(
+                receipt_number=SupplementPayment.generate_receipt_number(),
+                sale=sale,
+                amount=sale.paid_amount,
+                payment_method=sale.payment_method,
+                payment_date=sale.sale_date.date() if hasattr(sale, 'sale_date') and sale.sale_date else date.today(),
+                notes=sale.notes,
+                received_by=sale.sold_by
+            )
 
         # Create Items & Deduct Stock
         for prep in prepared_items:

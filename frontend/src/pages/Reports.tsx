@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useToast } from '../context/ToastContext';
+import { getTodayDateString } from '../utils/date';
 
 export const Reports: React.FC = () => {
   const { showToast } = useToast();
@@ -74,7 +75,7 @@ export const Reports: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `Morya_Fitness_${reportType}_report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Morya_Fitness_${reportType}_report_${getTodayDateString()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -221,29 +222,36 @@ export const Reports: React.FC = () => {
 
         {/* Supplements Summary KPI Cards */}
         {reportType === 'supplements' && reportData?.summary && reportData.summary.total_sales_count !== undefined && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-5 bg-gradient-to-br from-orange-500/10 via-amber-500/5 to-transparent rounded-2xl border border-orange-200/60 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3.5 p-5 bg-gradient-to-br from-orange-500/10 via-amber-500/5 to-transparent rounded-2xl border border-orange-200/60 mb-6">
             <div className="p-3.5 bg-white rounded-xl shadow-xs border border-orange-100">
               <span className="text-[10px] text-slate-500 uppercase font-bold block">Total Store Sales</span>
-              <span className="text-2xl font-black text-orange-600 font-heading mt-1 block">
+              <span className="text-xl font-black text-orange-600 font-heading mt-1 block">
                 ₹{Number(reportData.summary.total_revenue || 0).toLocaleString('en-IN')}
               </span>
             </div>
             <div className="p-3.5 bg-white rounded-xl shadow-xs border border-orange-100">
+              <span className="text-[10px] text-slate-500 uppercase font-bold block">Total Cost (COGS)</span>
+              <span className="text-xl font-black text-slate-700 font-heading mt-1 block">
+                ₹{Number(reportData.summary.total_cost || 0).toLocaleString('en-IN')}
+              </span>
+            </div>
+            <div className="p-3.5 bg-white rounded-xl shadow-xs border border-emerald-200 bg-emerald-50/40">
+              <span className="text-[10px] text-emerald-800 uppercase font-bold block">Net Profit</span>
+              <span className="text-xl font-black text-emerald-700 font-heading mt-1 block">
+                ₹{Number(reportData.summary.total_profit || 0).toLocaleString('en-IN')}
+              </span>
+              <span className="text-[10px] text-emerald-600 font-semibold">{reportData.summary.profit_margin || 0}% margin</span>
+            </div>
+            <div className="p-3.5 bg-white rounded-xl shadow-xs border border-orange-100">
               <span className="text-[10px] text-slate-500 uppercase font-bold block">Invoices Billed</span>
-              <span className="text-2xl font-black text-slate-900 font-heading mt-1 block">
+              <span className="text-xl font-black text-slate-900 font-heading mt-1 block">
                 {reportData.summary.total_sales_count || 0}
               </span>
             </div>
             <div className="p-3.5 bg-white rounded-xl shadow-xs border border-orange-100">
               <span className="text-[10px] text-slate-500 uppercase font-bold block">Total Units Sold</span>
-              <span className="text-2xl font-black text-slate-900 font-heading mt-1 block">
+              <span className="text-xl font-black text-slate-900 font-heading mt-1 block">
                 {reportData.summary.total_units_sold || 0}
-              </span>
-            </div>
-            <div className="p-3.5 bg-white rounded-xl shadow-xs border border-orange-100">
-              <span className="text-[10px] text-slate-500 uppercase font-bold block">Average Order Value</span>
-              <span className="text-2xl font-black text-emerald-600 font-heading mt-1 block">
-                ₹{Number(reportData.summary.average_sale_value || 0).toLocaleString('en-IN')}
               </span>
             </div>
           </div>

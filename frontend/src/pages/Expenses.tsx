@@ -9,6 +9,7 @@ import { api } from '../services/api';
 import { Modal } from '../components/common/Modal';
 import { useToast } from '../context/ToastContext';
 import { SearchableSelect, SearchableSelectOption } from '../components/common/SearchableSelect';
+import { getTodayDateString } from '../utils/date';
 
 export const Expenses: React.FC = () => {
   const { showToast } = useToast();
@@ -71,7 +72,7 @@ export const Expenses: React.FC = () => {
     category: 'Gym Maintenance & Sanitation',
     description: '',
     amount: '',
-    date: new Date().toISOString().split('T')[0],
+    date: getTodayDateString(),
     payment_method: 'UPI',
     notes: '',
   });
@@ -176,7 +177,7 @@ export const Expenses: React.FC = () => {
         category: categoriesList[0]?.name || 'Gym Maintenance & Sanitation',
         description: '',
         amount: '',
-        date: new Date().toISOString().split('T')[0],
+        date: getTodayDateString(),
         payment_method: 'UPI',
         notes: '',
       });

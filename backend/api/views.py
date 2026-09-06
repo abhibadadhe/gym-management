@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from dotenv import load_dotenv
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Sum, Count, Q, F
+from django.db.models import Sum, Count, Q, F, ExpressionWrapper, DecimalField
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse, JsonResponse
@@ -28,7 +28,7 @@ from .models import (
     MemberMembership, Payment, Attendance, WorkoutPlan,
     WorkoutExercise, Expense, ExpenseCategory, AuditLog,
     SupplementCategory, SupplementProduct, SupplementSale, SupplementSaleItem,
-    PasswordResetOTP
+    SupplementPayment, PasswordResetOTP
 )
 from .serializers import (
     UserSerializer, GymSettingsSerializer, TrainerSerializer,
@@ -41,7 +41,8 @@ from .serializers import (
     RenewMembershipSerializer, QuickPaymentSerializer,
     AttendanceCheckInSerializer,
     SupplementCategorySerializer, SupplementProductSerializer,
-    SupplementSaleSerializer, SupplementSaleItemSerializer
+    SupplementSaleSerializer, SupplementSaleItemSerializer,
+    SupplementPaymentSerializer
 )
 from .permissions import IsAdminUserRole, IsReceptionistOrAdmin, IsStaffUser, IsAdminOrReadOnly
 from .utils import log_audit, get_whatsapp_templates
@@ -516,14 +517,38 @@ class DashboardStatsView(APIView):
         # 2. Today's Attendance
         today_attendance = Attendance.objects.filter(date=today).count()
 
-        # 3. Financial Collections
-        today_collection = Payment.objects.filter(payment_date=today).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        this_month_collection = Payment.objects.filter(payment_date__gte=this_month_start).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        # 3. Financial Collections (membership fee collections only for dashboard)
+        mem_today = Payment.objects.filter(payment_date=today).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        today_collection = mem_today
+
+        mem_month = Payment.objects.filter(payment_date__gte=this_month_start).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        this_month_collection = mem_month
         
-        # Pending dues total
-        total_pending = MemberMembership.objects.filter(
+        # Pending dues total (membership fee dues only)
+        mem_pending = MemberMembership.objects.filter(
             member__is_active=True
         ).aggregate(total=Sum('pending_amount'))['total'] or Decimal('0.00')
+        total_pending = mem_pending
+
+        # Supplement Financial Metrics for Dashboard
+        sup_month = SupplementPayment.objects.filter(payment_date__gte=this_month_start).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        sup_pending = SupplementSale.objects.filter(pending_amount__gt=0).aggregate(total=Sum('pending_amount'))['total'] or Decimal('0.00')
+        combined_month = mem_month + sup_month
+
+        # Supplements Profit (Month & Total)
+        sup_month_sales = SupplementSale.objects.filter(sale_date__date__gte=this_month_start)
+        sup_month_sale_rev = sup_month_sales.aggregate(total=Sum('final_amount'))['total'] or Decimal('0.00')
+        sup_month_cost = SupplementSaleItem.objects.filter(sale__sale_date__date__gte=this_month_start).aggregate(
+            cost=Sum(ExpressionWrapper(F('quantity') * F('cost_price'), output_field=DecimalField(max_digits=12, decimal_places=2)))
+        )['cost'] or Decimal('0.00')
+        sup_month_profit = sup_month_sale_rev - sup_month_cost
+
+        sup_total_sales = SupplementSale.objects.aggregate(total=Sum('final_amount'))['total'] or Decimal('0.00')
+        sup_total_cost = SupplementSaleItem.objects.aggregate(
+            cost=Sum(ExpressionWrapper(F('quantity') * F('cost_price'), output_field=DecimalField(max_digits=12, decimal_places=2)))
+        )['cost'] or Decimal('0.00')
+        sup_total_profit = sup_total_sales - sup_total_cost
+        sup_profit_margin = float(sup_total_profit / sup_total_sales * 100) if sup_total_sales > 0 else 0.0
 
         # 4. 14-Day Attendance Trend
         attendance_trend = []
@@ -535,7 +560,7 @@ class DashboardStatsView(APIView):
                 'count': count
             })
 
-        # 5. 6-Month Revenue Trend
+        # 5. 6-Month Revenue Trend (membership fees & payments only)
         revenue_trend = []
         for i in range(5, -1, -1):
             # calculate year and month
@@ -550,14 +575,18 @@ class DashboardStatsView(APIView):
             else:
                 m_end = date(m_year, m_month + 1, 1) - timedelta(days=1)
             
-            m_rev = Payment.objects.filter(payment_date__range=[m_start, m_end]).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            m_mem_rev = Payment.objects.filter(payment_date__range=[m_start, m_end]).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            m_sup_rev = SupplementPayment.objects.filter(payment_date__range=[m_start, m_end]).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            m_total_rev = m_mem_rev + m_sup_rev
             m_exp = Expense.objects.filter(date__range=[m_start, m_end]).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
             
             revenue_trend.append({
                 'month': m_start.strftime('%b %Y'),
-                'revenue': float(m_rev),
+                'revenue': float(m_total_rev),
+                'fee_revenue': float(m_mem_rev),
+                'supplement_revenue': float(m_sup_rev),
                 'expenses': float(m_exp),
-                'profit': float(m_rev - m_exp)
+                'profit': float(m_total_rev - m_exp)
             })
 
         # 6. Plan Distribution among Active Members (Unique active members per current plan)
@@ -577,6 +606,31 @@ class DashboardStatsView(APIView):
         recent_checkins = Attendance.objects.select_related('member').order_by('-check_in_time')[:8]
         recent_checkins_data = AttendanceSerializer(recent_checkins, many=True).data
 
+        # 8. Most Sold / Popular Products Breakdown
+        popular_products_qs = SupplementSaleItem.objects.values(
+            'product_name', 'product_brand'
+        ).annotate(
+            total_quantity=Sum('quantity'),
+            total_revenue=Sum('subtotal'),
+            total_cost=Sum(ExpressionWrapper(F('quantity') * F('cost_price'), output_field=DecimalField(max_digits=12, decimal_places=2)))
+        ).order_by('-total_quantity', '-total_revenue')[:9]
+
+        popular_products = []
+        for item in popular_products_qs:
+            rev = float(item['total_revenue'] or 0)
+            cost = float(item['total_cost'] or 0)
+            prof = rev - cost
+            margin = round((prof / rev * 100), 1) if rev > 0 else 0.0
+            popular_products.append({
+                'name': item['product_name'],
+                'brand': item['product_brand'] or '',
+                'quantity': item['total_quantity'] or 0,
+                'revenue': rev,
+                'cost': cost,
+                'profit': prof,
+                'margin': margin,
+            })
+
         return Response({
             'kpis': {
                 'total_members': total_members,
@@ -588,10 +642,17 @@ class DashboardStatsView(APIView):
                 'this_month_collection': float(this_month_collection),
                 'pending_payments': float(total_pending),
                 'new_members_this_month': new_members_this_month,
+                'supplements_month_revenue': float(sup_month),
+                'supplements_pending_dues': float(sup_pending),
+                'combined_month_revenue': float(combined_month),
+                'supplements_month_profit': float(sup_month_profit),
+                'supplements_total_profit': float(sup_total_profit),
+                'supplements_profit_margin': round(sup_profit_margin, 1),
             },
             'revenue_trend': revenue_trend,
             'attendance_trend': attendance_trend,
             'plan_distribution': plan_distribution,
+            'popular_products': popular_products,
             'recent_checkins': recent_checkins_data,
             'expiring_members': expiring_members_list[:10],
             'pending_dues': pending_dues_list[:10],
@@ -956,13 +1017,32 @@ class PaymentViewSet(viewsets.ModelViewSet):
         plan_price = float(membership.price) if membership else float(payment.amount)
         discount = float(membership.discount) if membership else 0.0
         final_amount = float(membership.final_amount) if membership else float(payment.amount)
-        paid_amount = float(membership.paid_amount) if membership else float(payment.amount)
-        pending_amount = float(membership.pending_amount) if membership else 0.0
+
+        if membership:
+            membership_payments = list(membership.payments.order_by('created_at', 'id'))
+            first_payment = membership_payments[0] if membership_payments else payment
+            is_dues_payment = bool(first_payment and payment.id != first_payment.id)
+            prior_payments = [
+                p for p in membership_payments
+                if (p.created_at < payment.created_at or (p.created_at == payment.created_at and p.id < payment.id))
+            ]
+            already_paid = float(sum(p.amount for p in prior_payments))
+            this_payment_amount = float(payment.amount)
+            total_paid_up_to = already_paid + this_payment_amount
+            remaining_at_payment = max(0.0, final_amount - total_paid_up_to)
+        else:
+            is_dues_payment = False
+            already_paid = 0.0
+            this_payment_amount = float(payment.amount)
+            total_paid_up_to = this_payment_amount
+            remaining_at_payment = max(0.0, final_amount - total_paid_up_to)
 
         cashier_name = payment.received_by.get_full_name() if payment.received_by else 'Gokul Gugale (Admin)'
 
         return Response({
             'id': payment.id,
+            'receipt_type': 'DUES_RECEIPT' if is_dues_payment else 'PAYMENT_RECEIPT',
+            'is_dues_payment': is_dues_payment,
             'gym': {
                 'name': settings.name,
                 'tagline': settings.tagline,
@@ -994,8 +1074,8 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 'plan_price': plan_price,
                 'discount': discount,
                 'final_amount': final_amount,
-                'paid_amount': paid_amount,
-                'pending_amount': pending_amount,
+                'paid_amount': total_paid_up_to,
+                'pending_amount': remaining_at_payment,
             },
             'membership': {
                 'start_date': str(membership.start_date) if membership else str(payment.payment_date),
@@ -1006,8 +1086,11 @@ class PaymentViewSet(viewsets.ModelViewSet):
             'plan_description': membership.plan.description if membership and membership.plan else '',
             'discount_applied': discount,
             'final_payable': final_amount,
-            'amount_paid': float(payment.amount),
-            'remaining_pending_dues': pending_amount,
+            'amount_paid': this_payment_amount,
+            'already_paid': already_paid,
+            'this_payment_amount': this_payment_amount,
+            'total_paid_amount': total_paid_up_to,
+            'remaining_pending_dues': remaining_at_payment,
             'payment_method': payment.get_payment_method_display(),
             'transaction_ref': payment.transaction_ref,
             'received_by': cashier_name,
@@ -1280,11 +1363,25 @@ class FinancialSummaryView(APIView):
         mem_this_month_rev = Payment.objects.filter(payment_date__gte=month_start).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
         mem_last_month_rev = Payment.objects.filter(payment_date__range=[last_month_start, last_month_end]).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
 
-        # Revenue from Supplements & Store Sales
-        sup_total_rev = SupplementSale.objects.aggregate(total=Sum('final_amount'))['total'] or Decimal('0.00')
-        sup_today_rev = SupplementSale.objects.filter(sale_date__date=today).aggregate(total=Sum('final_amount'))['total'] or Decimal('0.00')
-        sup_this_month_rev = SupplementSale.objects.filter(sale_date__date__gte=month_start).aggregate(total=Sum('final_amount'))['total'] or Decimal('0.00')
-        sup_last_month_rev = SupplementSale.objects.filter(sale_date__date__range=[last_month_start, last_month_end]).aggregate(total=Sum('final_amount'))['total'] or Decimal('0.00')
+        # Revenue from Supplements & Store Sales (based on actual payment collection dates)
+        sup_total_rev = SupplementPayment.objects.aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        sup_today_rev = SupplementPayment.objects.filter(payment_date=today).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        sup_this_month_rev = SupplementPayment.objects.filter(payment_date__gte=month_start).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+        sup_last_month_rev = SupplementPayment.objects.filter(payment_date__range=[last_month_start, last_month_end]).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+
+        # Supplements Profit & COGS
+        sup_total_sales = SupplementSale.objects.aggregate(t=Sum('final_amount'))['t'] or Decimal('0.00')
+        sup_total_cogs = SupplementSaleItem.objects.aggregate(
+            cost=Sum(ExpressionWrapper(F('quantity') * F('cost_price'), output_field=DecimalField(max_digits=12, decimal_places=2)))
+        )['cost'] or Decimal('0.00')
+        sup_all_profit = sup_total_sales - sup_total_cogs
+        sup_margin = round(float(sup_all_profit / sup_total_sales * 100), 1) if sup_total_sales > 0 else 0.0
+
+        sup_month_sales = SupplementSale.objects.filter(sale_date__date__gte=month_start).aggregate(t=Sum('final_amount'))['t'] or Decimal('0.00')
+        sup_month_cogs = SupplementSaleItem.objects.filter(sale__sale_date__date__gte=month_start).aggregate(
+            cost=Sum(ExpressionWrapper(F('quantity') * F('cost_price'), output_field=DecimalField(max_digits=12, decimal_places=2)))
+        )['cost'] or Decimal('0.00')
+        sup_month_profit = sup_month_sales - sup_month_cogs
 
         # Combined Total Revenues
         total_rev = mem_total_rev + sup_total_rev
@@ -1335,6 +1432,10 @@ class FinancialSummaryView(APIView):
                 'today': float(sup_today_rev),
                 'this_month': float(sup_this_month_rev),
                 'last_month': float(sup_last_month_rev),
+                'total_profit': float(sup_all_profit),
+                'month_profit': float(sup_month_profit),
+                'profit_margin': sup_margin,
+                'cogs': float(sup_total_cogs),
             },
         })
 
@@ -1426,10 +1527,15 @@ class ReportsView(APIView):
 
             data = []
             total_units = 0
+            total_cost_all = Decimal('0.00')
             for s in qs:
                 items_str = ", ".join([f"{item.product_name} (x{item.quantity})" for item in s.items.all()])
                 items_count = sum([item.quantity for item in s.items.all()])
+                sale_cost = sum([item.quantity * item.cost_price for item in s.items.all()])
+                sale_profit = s.final_amount - sale_cost
+                sale_margin = round(float(sale_profit / s.final_amount * 100), 1) if s.final_amount > 0 else 0.0
                 total_units += items_count
+                total_cost_all += sale_cost
                 data.append({
                     'Invoice No': s.invoice_number,
                     'Date': s.sale_date.strftime('%Y-%m-%d %I:%M %p'),
@@ -1441,16 +1547,24 @@ class ReportsView(APIView):
                     'Subtotal (₹)': float(s.subtotal),
                     'Discount (₹)': float(s.discount),
                     'Final Paid (₹)': float(s.final_amount),
+                    'Cost Price (₹)': float(sale_cost),
+                    'Profit (₹)': float(sale_profit),
+                    'Profit Margin (%)': f"{sale_margin}%",
                     'Method': s.get_payment_method_display(),
                     'Billed By': s.sold_by.get_full_name() if s.sold_by else 'Staff'
                 })
 
+            total_profit_all = total_rev - total_cost_all
+            overall_margin = round(float(total_profit_all / total_rev * 100), 1) if total_rev > 0 else 0.0
             avg_val = float(round(total_rev / total_sales, 2)) if total_sales > 0 else 0.0
 
             return Response({
                 'title': 'Supplements & Store Sales Report',
                 'summary': {
                     'total_revenue': float(total_rev),
+                    'total_cost': float(total_cost_all),
+                    'total_profit': float(total_profit_all),
+                    'profit_margin': overall_margin,
                     'total_sales_count': total_sales,
                     'total_units_sold': total_units,
                     'average_sale_value': avg_val
@@ -1688,8 +1802,80 @@ class SupplementSaleViewSet(viewsets.ModelViewSet):
                 'subtotal': float(item.subtotal),
             })
 
+        # Check if requesting a specific payment receipt (e.g. dues payment receipt or initial receipt)
+        payment_id = request.query_params.get('payment_id')
+        specific_payment = None
+        if payment_id:
+            try:
+                specific_payment = sale.payments.filter(id=payment_id).first()
+            except Exception:
+                specific_payment = None
+        elif sale.payments.exists():
+            # Default to the most recent payment receipt so it acts as an official payment receipt
+            specific_payment = sale.payments.last()
+
+        if specific_payment:
+            pay_cashier = specific_payment.received_by.get_full_name() if specific_payment.received_by else cashier_name
+            first_payment = sale.payments.order_by('created_at', 'id').first()
+            is_dues_payment = bool(first_payment and specific_payment.id != first_payment.id)
+
+            # Sum all payments made strictly prior to this one chronologically
+            prior_payments = sale.payments.filter(
+                Q(created_at__lt=specific_payment.created_at) |
+                Q(created_at=specific_payment.created_at, id__lt=specific_payment.id)
+            )
+            already_paid = float(sum(p.amount for p in prior_payments))
+            this_payment_amount = float(specific_payment.amount)
+            total_paid_up_to = already_paid + this_payment_amount
+            remaining_at_payment = max(0.0, float(sale.final_amount) - total_paid_up_to)
+
+            return Response({
+                'id': sale.id,
+                'receipt_type': 'DUES_RECEIPT' if is_dues_payment else 'PAYMENT_RECEIPT',
+                'is_dues_payment': is_dues_payment,
+                'receipt_number': specific_payment.receipt_number,
+                'payment_id': specific_payment.id,
+                'payment_date': specific_payment.payment_date.strftime('%d-%b-%Y'),
+                'date': specific_payment.payment_date.strftime('%d-%b-%Y'),
+                'gym': {
+                    'name': settings.name,
+                    'tagline': settings.tagline,
+                    'address': settings.address,
+                    'phone': settings.phone,
+                    'email': settings.email,
+                    'upi_id': settings.upi_id,
+                },
+                'invoice_number': sale.invoice_number,
+                'original_invoice_number': sale.invoice_number,
+                'original_sale_date': sale.sale_date.strftime('%d-%b-%Y'),
+                'customer_name': sale.customer_name,
+                'customer_phone': sale.customer_phone or "N/A",
+                'member_id': sale.member.member_id if sale.member else None,
+                'items': items_list,
+                'subtotal': float(sale.subtotal),
+                'discount': float(sale.discount),
+                'final_amount': float(sale.final_amount),
+                'already_paid': already_paid,
+                'this_payment_amount': this_payment_amount,
+                'total_paid_amount': total_paid_up_to,
+                'paid_amount': total_paid_up_to,
+                'initial_paid_amount': float(sale.initial_paid_amount),
+                'dues_paid_amount': float(sale.dues_paid_amount),
+                'has_collected_dues': bool(sale.has_collected_dues),
+                'pending_amount': remaining_at_payment,
+                'payment_status': 'PAID' if remaining_at_payment <= 0 else 'PARTIAL',
+                'payment_status_display': 'Fully Paid' if remaining_at_payment <= 0 else 'Partially Paid',
+                'payment_method': specific_payment.get_payment_method_display(),
+                'sold_by': pay_cashier,
+                'notes': specific_payment.notes or sale.clean_notes,
+                'payments': SupplementPaymentSerializer(sale.payments.all(), many=True).data,
+            })
+
+        # Default: Full Sale Invoice Receipt
         return Response({
             'id': sale.id,
+            'receipt_type': 'INVOICE',
+            'receipt_number': sale.invoice_number,
             'gym': {
                 'name': settings.name,
                 'tagline': settings.tagline,
@@ -1699,6 +1885,7 @@ class SupplementSaleViewSet(viewsets.ModelViewSet):
                 'upi_id': settings.upi_id,
             },
             'invoice_number': sale.invoice_number,
+            'original_invoice_number': sale.invoice_number,
             'sale_date': sale.sale_date.strftime('%d-%b-%Y'),
             'date': sale.sale_date.strftime('%d-%b-%Y'),
             'customer_name': sale.customer_name,
@@ -1708,10 +1895,148 @@ class SupplementSaleViewSet(viewsets.ModelViewSet):
             'subtotal': float(sale.subtotal),
             'discount': float(sale.discount),
             'final_amount': float(sale.final_amount),
+            'already_paid': float(sale.initial_paid_amount),
+            'this_payment_amount': float(sale.paid_amount),
+            'total_paid_amount': float(sale.paid_amount),
+            'paid_amount': float(sale.paid_amount),
+            'initial_paid_amount': float(sale.initial_paid_amount),
+            'dues_paid_amount': float(sale.dues_paid_amount),
+            'has_collected_dues': bool(sale.has_collected_dues),
+            'pending_amount': float(sale.pending_amount),
+            'payment_status': sale.payment_status,
+            'payment_status_display': sale.get_payment_status_display(),
             'payment_method': sale.get_payment_method_display(),
             'sold_by': cashier_name,
-            'notes': sale.notes or "",
+            'notes': sale.clean_notes,
+            'payments': SupplementPaymentSerializer(sale.payments.all(), many=True).data,
         })
+
+    @action(detail=False, methods=['get'], url_path='pending-dues')
+    def pending_dues(self, request):
+        sales = SupplementSale.objects.filter(
+            pending_amount__gt=0
+        ).select_related('member', 'sold_by').prefetch_related('items__product', 'payments').order_by('-sale_date')
+        return Response(SupplementSaleSerializer(sales, many=True).data)
+
+    @action(detail=True, methods=['post'], url_path='collect-due')
+    def collect_due(self, request, pk=None):
+        sale = self.get_object()
+        if sale.pending_amount <= 0:
+            return Response({'detail': 'This supplement invoice has no outstanding dues.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        raw_amt = request.data.get('amount')
+        try:
+            collect_amount = Decimal(str(raw_amt or '0.00'))
+        except Exception:
+            return Response({'detail': 'Invalid collection amount provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if collect_amount <= 0:
+            return Response({'detail': 'Collection amount must be greater than zero.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        actual_paid = min(sale.pending_amount, collect_amount)
+
+        method = (request.data.get('payment_method') or 'UPI').upper()
+        if method not in dict(SupplementPayment.PAYMENT_METHOD_CHOICES):
+            method = 'UPI'
+
+        # Payment date parsing (supports backdated recording e.g. 5 Sep)
+        raw_date = request.data.get('payment_date')
+        if raw_date:
+            try:
+                from datetime import datetime
+                pay_date = datetime.strptime(str(raw_date).split('T')[0], '%Y-%m-%d').date()
+            except Exception:
+                pay_date = date.today()
+        else:
+            pay_date = date.today()
+
+        note = request.data.get('notes', '').strip()
+
+        # 1. Create a dedicated SupplementPayment record attributed to pay_date
+        payment = SupplementPayment.objects.create(
+            receipt_number=SupplementPayment.generate_receipt_number(),
+            sale=sale,
+            amount=actual_paid,
+            payment_method=method,
+            payment_date=pay_date,
+            notes=note,
+            received_by=request.user if request.user.is_authenticated else None
+        )
+
+        # 2. Update sale record
+        sale.paid_amount += actual_paid
+        if note:
+            sale.notes = f"{sale.clean_notes}\n{note}".strip() if sale.clean_notes else note
+        sale.save()
+
+        log_audit(
+            request.user,
+            'SUPPLEMENT_DUE_COLLECTED',
+            'SupplementSale',
+            sale.id,
+            f"Collected ₹{actual_paid} via {method} on {pay_date} for invoice {sale.invoice_number} from {sale.customer_name} (Receipt #{payment.receipt_number})."
+        )
+
+        # 3. Build Dues Payment Receipt payload
+        settings = GymSettings.get_settings()
+        cashier_name = payment.received_by.get_full_name() if payment.received_by else (request.user.get_full_name() if request.user.is_authenticated else 'Admin')
+        items_list = [
+            {
+                'id': item.id,
+                'name': item.product_name,
+                'brand': item.product_brand,
+                'quantity': item.quantity,
+                'unit_price': float(item.unit_price),
+                'subtotal': float(item.subtotal),
+            }
+            for item in sale.items.all()
+        ]
+
+        receipt_payload = {
+            'id': sale.id,
+            'receipt_type': 'DUES_RECEIPT',
+            'receipt_number': payment.receipt_number,
+            'payment_id': payment.id,
+            'payment_date': pay_date.strftime('%d-%b-%Y'),
+            'date': pay_date.strftime('%d-%b-%Y'),
+            'gym': {
+                'name': settings.name,
+                'tagline': settings.tagline,
+                'address': settings.address,
+                'phone': settings.phone,
+                'email': settings.email,
+                'upi_id': settings.upi_id,
+            },
+            'invoice_number': sale.invoice_number,
+            'original_invoice_number': sale.invoice_number,
+            'original_sale_date': sale.sale_date.strftime('%d-%b-%Y'),
+            'customer_name': sale.customer_name,
+            'customer_phone': sale.customer_phone or "N/A",
+            'member_id': sale.member.member_id if sale.member else None,
+            'items': items_list,
+            'subtotal': float(sale.subtotal),
+            'discount': float(sale.discount),
+            'final_amount': float(sale.final_amount),
+            'this_payment_amount': float(actual_paid),
+            'paid_amount': float(sale.paid_amount),
+            'initial_paid_amount': float(sale.initial_paid_amount),
+            'dues_paid_amount': float(sale.dues_paid_amount),
+            'has_collected_dues': bool(sale.has_collected_dues),
+            'pending_amount': float(sale.pending_amount),
+            'payment_status': sale.payment_status,
+            'payment_status_display': sale.get_payment_status_display(),
+            'payment_method': payment.get_payment_method_display(),
+            'sold_by': cashier_name,
+            'notes': note or sale.clean_notes,
+            'payments': SupplementPaymentSerializer(sale.payments.all(), many=True).data,
+        }
+
+        return Response({
+            'message': f"Successfully collected ₹{actual_paid} on {pay_date.strftime('%d %b %Y')}. Remaining due: ₹{sale.pending_amount}.",
+            'sale': SupplementSaleSerializer(sale).data,
+            'payment': SupplementPaymentSerializer(payment).data,
+            'receipt': receipt_payload,
+        }, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=['get'], url_path='pdf')
     def get_invoice_pdf(self, request, pk=None):
@@ -1721,11 +2046,17 @@ class SupplementSaleViewSet(viewsets.ModelViewSet):
             if str(pk).isdigit():
                 sale = self.get_object()
             else:
-                sale = SupplementSale.objects.select_related('member', 'sold_by').prefetch_related('items', 'items__product').get(invoice_number__iexact=pk)
+                sale = SupplementSale.objects.select_related('member', 'sold_by').prefetch_related('items', 'items__product', 'payments').get(invoice_number__iexact=pk)
         except (SupplementSale.DoesNotExist, Http404):
             raise Http404("Supplement invoice not found")
-        pdf_bytes = generate_supplement_invoice_pdf(sale)
-        filename = f"Invoice_{sale.invoice_number}.pdf"
+        
+        payment_id = request.query_params.get('payment_id')
+        payment_obj = None
+        if payment_id:
+            payment_obj = sale.payments.filter(id=payment_id).first()
+
+        pdf_bytes = generate_supplement_invoice_pdf(sale, payment=payment_obj)
+        filename = f"Receipt_{payment_obj.receipt_number}.pdf" if payment_obj else f"Invoice_{sale.invoice_number}.pdf"
         response = HttpResponse(pdf_bytes, content_type='application/pdf')
         response['Content-Disposition'] = f'inline; filename="{filename}"'
         return response
@@ -1743,10 +2074,29 @@ class SupplementSaleViewSet(viewsets.ModelViewSet):
         total_inventory_cost = sum([p.stock_quantity * p.cost_price for p in products])
         total_retail_valuation = sum([p.stock_quantity * p.selling_price for p in products])
 
-        # Sales stats
-        today_sales = SupplementSale.objects.filter(sale_date__date=today).aggregate(t=Sum('final_amount'))['t'] or Decimal('0.00')
-        monthly_sales = SupplementSale.objects.filter(sale_date__date__gte=first_day_of_month).aggregate(t=Sum('final_amount'))['t'] or Decimal('0.00')
-        lifetime_sales = SupplementSale.objects.aggregate(t=Sum('final_amount'))['t'] or Decimal('0.00')
+        # Sales stats based on actual collection dates
+        today_sales = SupplementPayment.objects.filter(payment_date=today).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+        monthly_sales = SupplementPayment.objects.filter(payment_date__gte=first_day_of_month).aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+        lifetime_sales = SupplementPayment.objects.aggregate(t=Sum('amount'))['t'] or Decimal('0.00')
+
+        # Dues stats
+        dues_qs = SupplementSale.objects.filter(pending_amount__gt=0)
+        total_pending_dues = dues_qs.aggregate(t=Sum('pending_amount'))['t'] or Decimal('0.00')
+        pending_dues_count = dues_qs.count()
+
+        # Profit calculations
+        total_sale_revenue = SupplementSale.objects.aggregate(t=Sum('final_amount'))['t'] or Decimal('0.00')
+        total_cogs = SupplementSaleItem.objects.aggregate(
+            cost=Sum(ExpressionWrapper(F('quantity') * F('cost_price'), output_field=DecimalField(max_digits=12, decimal_places=2)))
+        )['cost'] or Decimal('0.00')
+        total_profit = total_sale_revenue - total_cogs
+        profit_margin = round(float(total_profit / total_sale_revenue * 100), 1) if total_sale_revenue > 0 else 0.0
+
+        month_sale_rev = SupplementSale.objects.filter(sale_date__date__gte=first_day_of_month).aggregate(t=Sum('final_amount'))['t'] or Decimal('0.00')
+        month_cogs = SupplementSaleItem.objects.filter(sale__sale_date__date__gte=first_day_of_month).aggregate(
+            cost=Sum(ExpressionWrapper(F('quantity') * F('cost_price'), output_field=DecimalField(max_digits=12, decimal_places=2)))
+        )['cost'] or Decimal('0.00')
+        month_profit = month_sale_rev - month_cogs
 
         return Response({
             'total_products': total_products,
@@ -1756,7 +2106,130 @@ class SupplementSaleViewSet(viewsets.ModelViewSet):
             'today_sales': float(today_sales),
             'monthly_sales': float(monthly_sales),
             'lifetime_sales': float(lifetime_sales),
+            'total_sales': float(lifetime_sales),
+            'total_pending_dues': float(total_pending_dues),
+            'pending_dues_count': pending_dues_count,
+            'total_profit': float(total_profit),
+            'month_profit': float(month_profit),
+            'profit_margin': profit_margin,
+            'total_cogs': float(total_cogs),
         })
+
+
+class SupplementPaymentViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [IsReceptionistOrAdmin]
+    serializer_class = SupplementPaymentSerializer
+    queryset = SupplementPayment.objects.all().select_related(
+        'sale', 'sale__member', 'received_by'
+    ).prefetch_related('sale__items', 'sale__items__product').order_by('-payment_date', '-id')
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        method = self.request.query_params.get('method')
+        start_date = self.request.query_params.get('start_date')
+        end_date = self.request.query_params.get('end_date')
+        member_id = self.request.query_params.get('member_id')
+        search = self.request.query_params.get('search')
+        if method:
+            qs = qs.filter(payment_method=method)
+        if start_date:
+            qs = qs.filter(payment_date__gte=start_date)
+        if end_date:
+            qs = qs.filter(payment_date__lte=end_date)
+        if member_id:
+            qs = qs.filter(sale__member_id=member_id)
+        if search:
+            qs = qs.filter(
+                Q(receipt_number__icontains=search) |
+                Q(sale__customer_name__icontains=search) |
+                Q(sale__member__member_id__icontains=search) |
+                Q(sale__invoice_number__icontains=search)
+            )
+        return qs
+
+    @action(detail=True, methods=['get'], url_path='receipt')
+    def receipt(self, request, pk=None):
+        payment = self.get_object()
+        sale = payment.sale
+        settings = GymSettings.get_settings()
+        cashier_name = payment.received_by.get_full_name() if payment.received_by else (sale.sold_by.get_full_name() if sale.sold_by else "Admin")
+
+        items_list = [
+            {
+                'id': item.id,
+                'name': item.product_name,
+                'brand': item.product_brand,
+                'quantity': item.quantity,
+                'unit_price': float(item.unit_price),
+                'subtotal': float(item.subtotal),
+            }
+            for item in sale.items.all()
+        ]
+
+        first_payment = sale.payments.order_by('created_at', 'id').first()
+        is_dues_payment = bool(first_payment and payment.id != first_payment.id)
+        prior_payments = sale.payments.filter(
+            Q(created_at__lt=payment.created_at) |
+            Q(created_at=payment.created_at, id__lt=payment.id)
+        )
+        already_paid = float(sum(p.amount for p in prior_payments))
+        this_payment_amount = float(payment.amount)
+        total_paid_up_to = already_paid + this_payment_amount
+        remaining_at_payment = max(0.0, float(sale.final_amount) - total_paid_up_to)
+
+        return Response({
+            'id': sale.id,
+            'receipt_type': 'DUES_RECEIPT' if is_dues_payment else 'PAYMENT_RECEIPT',
+            'is_dues_payment': is_dues_payment,
+            'receipt_number': payment.receipt_number,
+            'payment_id': payment.id,
+            'payment_date': payment.payment_date.strftime('%d-%b-%Y'),
+            'date': payment.payment_date.strftime('%d-%b-%Y'),
+            'gym': {
+                'name': settings.name,
+                'tagline': settings.tagline,
+                'address': settings.address,
+                'phone': settings.phone,
+                'email': settings.email,
+                'upi_id': settings.upi_id,
+            },
+            'invoice_number': sale.invoice_number,
+            'original_invoice_number': sale.invoice_number,
+            'original_sale_date': sale.sale_date.strftime('%d-%b-%Y'),
+            'customer_name': sale.customer_name,
+            'customer_phone': sale.customer_phone or "N/A",
+            'member_id': sale.member.member_id if sale.member else None,
+            'items': items_list,
+            'subtotal': float(sale.subtotal),
+            'discount': float(sale.discount),
+            'final_amount': float(sale.final_amount),
+            'already_paid': already_paid,
+            'this_payment_amount': this_payment_amount,
+            'total_paid_amount': total_paid_up_to,
+            'paid_amount': total_paid_up_to,
+            'initial_paid_amount': float(sale.initial_paid_amount),
+            'dues_paid_amount': float(sale.dues_paid_amount),
+            'has_collected_dues': bool(sale.has_collected_dues),
+            'pending_amount': remaining_at_payment,
+            'payment_status': 'PAID' if remaining_at_payment <= 0 else 'PARTIAL',
+            'payment_status_display': 'Fully Paid' if remaining_at_payment <= 0 else 'Partially Paid',
+            'payment_method': payment.get_payment_method_display(),
+            'sold_by': cashier_name,
+            'notes': payment.notes or sale.clean_notes,
+            'payments': SupplementPaymentSerializer(sale.payments.all(), many=True).data,
+        })
+
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def pdf(self, request, pk=None):
+        from django.http import HttpResponse
+        from .pdf_generator import generate_supplement_invoice_pdf
+        payment = self.get_object()
+        sale = payment.sale
+        pdf_bytes = generate_supplement_invoice_pdf(sale, payment=payment)
+        filename = f"Receipt_{payment.receipt_number}.pdf"
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
 
 
 class PublicReceiptPdfView(APIView):
@@ -1764,15 +2237,21 @@ class PublicReceiptPdfView(APIView):
 
     def get(self, request, receipt_number):
         from django.http import HttpResponse, Http404
-        from .pdf_generator import generate_payment_receipt_pdf
+        from .pdf_generator import generate_payment_receipt_pdf, generate_supplement_invoice_pdf
         try:
             payment = Payment.objects.select_related('member', 'membership', 'membership__plan').get(receipt_number__iexact=receipt_number)
+            pdf_bytes = generate_payment_receipt_pdf(payment)
+            filename = f"Receipt_{payment.receipt_number}.pdf"
         except Payment.DoesNotExist:
-            raise Http404("Receipt not found")
+            try:
+                sp = SupplementPayment.objects.select_related('sale', 'sale__member', 'sale__sold_by', 'received_by').prefetch_related('sale__items', 'sale__items__product').get(receipt_number__iexact=receipt_number)
+                pdf_bytes = generate_supplement_invoice_pdf(sp.sale, payment=sp)
+                filename = f"Receipt_{sp.receipt_number}.pdf"
+            except SupplementPayment.DoesNotExist:
+                raise Http404("Receipt not found")
 
-        pdf_bytes = generate_payment_receipt_pdf(payment)
         response = HttpResponse(pdf_bytes, content_type='application/pdf')
-        response['Content-Disposition'] = f'inline; filename="Receipt_{payment.receipt_number}.pdf"'
+        response['Content-Disposition'] = f'inline; filename="{filename}"'
         return response
 
 

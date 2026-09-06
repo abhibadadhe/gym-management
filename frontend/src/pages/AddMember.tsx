@@ -7,6 +7,7 @@ import { MembershipPlan, Trainer, ReceiptData } from '../types';
 import { api } from '../services/api';
 import { useToast } from '../context/ToastContext';
 import confetti from 'canvas-confetti';
+import { getTodayDateString } from '../utils/date';
 
 interface AddMemberProps {
   onBack: () => void;
@@ -32,13 +33,13 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
     emergency_contact_phone: '',
     aadhar_number: '',
     source: 'WALK_IN',
-    joining_date: new Date().toISOString().split('T')[0],
+    joining_date: getTodayDateString(),
     assigned_trainer_id: '',
     notes: '',
 
     // Plan & Payment
     plan_id: '',
-    start_date: new Date().toISOString().split('T')[0],
+    start_date: getTodayDateString(),
     discount: '0',
     paid_amount: '',
     payment_method: 'UPI',
@@ -624,7 +625,7 @@ export const AddMember: React.FC<AddMemberProps> = ({ onBack, onSuccess }) => {
                     setFormData(prev => ({
                       ...prev,
                       start_date: val,
-                      joining_date: (prev.joining_date === new Date().toISOString().split('T')[0] || prev.joining_date === prev.start_date) ? val : prev.joining_date,
+                      joining_date: (prev.joining_date === getTodayDateString() || prev.joining_date === prev.start_date) ? val : prev.joining_date,
                       payment_date: (!prev.payment_date || prev.payment_date === prev.start_date) ? val : prev.payment_date,
                     }));
                   }}

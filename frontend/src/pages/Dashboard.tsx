@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Users, UserCheck, AlertTriangle, XCircle,
   CreditCard, TrendingUp, UserPlus, RefreshCw,
-  IndianRupee, Cake, ArrowUpRight, MessageSquare, Phone
+  IndianRupee, Cake, ArrowUpRight, MessageSquare, Phone,
+  ShoppingBag, Receipt, Package
 } from 'lucide-react';
 import {
   AreaChart, Area, PieChart, Pie, Cell,
@@ -62,9 +63,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const this_month_revenue = kpis.this_month_collection ?? (data as any).this_month_revenue ?? 0;
   const total_pending_dues = kpis.pending_payments ?? (data as any).total_pending_dues ?? 0;
   const new_members_this_month = kpis.new_members_this_month ?? (data as any).new_members_this_month ?? 0;
+  const supplements_month_revenue = kpis.supplements_month_revenue ?? (data as any).supplements_month_revenue ?? 0;
+  const supplements_pending_dues = kpis.supplements_pending_dues ?? (data as any).supplements_pending_dues ?? 0;
+  const combined_month_revenue = kpis.combined_month_revenue ?? ((Number(this_month_revenue) || 0) + (Number(supplements_month_revenue) || 0));
 
   const revenue_chart = data.revenue_trend || (data as any).revenue_chart || [];
+  const formattedRevenueChart = (revenue_chart || []).map((item: any) => ({
+    ...item,
+    fee_revenue: Number(item.fee_revenue ?? item.revenue ?? 0),
+    supplement_revenue: Number(item.supplement_revenue ?? 0),
+    total_revenue: Number(item.revenue ?? 0),
+  }));
   const plan_distribution = data.plan_distribution || [];
+  const popular_products = (data as any).popular_products || [];
   const expiring_members = data.expiring_members || [];
   const pending_payments = data.pending_dues || (data as any).pending_payments || [];
   const today_birthdays = data.today_birthdays || [];
@@ -76,6 +87,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   ];
 
   const PLAN_COLORS = ['#ea580c', '#3b82f6', '#10b981', '#8b5cf6', '#ec4899'];
+  const PRODUCT_COLORS = ['#ea580c', '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4'];
 
   return (
     <div className="space-y-6 pb-12">
@@ -102,122 +114,152 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       {/* Primary KPI Cards Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-        {/* Total Members */}
-        <div
-          onClick={() => onNavigate('members', 'ALL')}
-          className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">Total Members</span>
-            <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
-              <Users className="w-4 h-4" />
+      <div className="space-y-3 sm:space-y-4">
+        {/* Membership Metrics */}
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          {/* Total Members */}
+          <div
+            onClick={() => onNavigate('members', 'ALL')}
+            className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">Total Members</span>
+              <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+                <Users className="w-4 h-4" />
+              </div>
             </div>
+            <div className="mt-2 flex items-baseline justify-between">
+              <h3 className="text-2xl sm:text-3xl font-black text-slate-900 font-heading">{total_members}</h3>
+              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                +{new_members_this_month} new
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-400 mt-1 block">Total registrations</span>
           </div>
-          <div className="mt-2 flex items-baseline justify-between">
-            <h3 className="text-2xl sm:text-3xl font-black text-slate-900 font-heading">{total_members}</h3>
-            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-              +{new_members_this_month} new
+
+          {/* Active Members */}
+          <div
+            onClick={() => onNavigate('members', 'ACTIVE')}
+            className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">Active Members</span>
+              <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                <UserCheck className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2 flex items-baseline justify-between">
+              <h3 className="text-2xl sm:text-3xl font-black text-emerald-600 font-heading">{active_members}</h3>
+              <span className="text-[10px] font-semibold text-slate-500">
+                {total_members > 0 ? Math.round((active_members / total_members) * 100) : 0}% Active
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-400 mt-1 block">Valid active subscriptions</span>
+          </div>
+
+          {/* Expiring Soon */}
+          <div
+            onClick={() => onNavigate('members', 'EXPIRING_SOON')}
+            className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">Expiring Soon (≤7d)</span>
+              <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2 flex items-baseline justify-between">
+              <h3 className="text-2xl sm:text-3xl font-black text-amber-600 font-heading">{expiring_soon_count}</h3>
+              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                Action Req.
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-400 mt-1 block">Follow-up for renewal</span>
+          </div>
+
+          {/* Expired Members */}
+          <div
+            onClick={() => onNavigate('members', 'EXPIRED')}
+            className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">Expired Members</span>
+              <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
+                <XCircle className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2 flex items-baseline justify-between">
+              <h3 className="text-2xl sm:text-3xl font-black text-rose-600 font-heading">{expired_count}</h3>
+              <span className="text-[10px] font-semibold text-rose-600">Renewable</span>
+            </div>
+            <span className="text-[10px] text-slate-400 mt-1 block">Requires plan extension</span>
+          </div>
+        </div>
+
+        {/* Financial Overview (Combined Month Revenue, Membership Dues, Supplements Dues) */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+          {/* Combined This Month's Revenue */}
+          <div
+            onClick={() => onNavigate('financials')}
+            className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
+            title="View Financial P&L Statement"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">This Month Revenue</span>
+              <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2 flex items-baseline justify-between">
+              <h3 className="text-2xl sm:text-3xl font-black text-orange-600 font-heading">
+                ₹{Number(combined_month_revenue).toLocaleString('en-IN')}
+              </h3>
+            </div>
+            <span className="text-[10px] text-slate-400 mt-1 block">
+              Fees: ₹{Number(this_month_revenue).toLocaleString('en-IN')} • Supplements: ₹{Number(supplements_month_revenue).toLocaleString('en-IN')}
+              {kpis.supplements_month_profit !== undefined && kpis.supplements_month_profit > 0 ? ` (Sup. Profit: ₹${Number(kpis.supplements_month_profit).toLocaleString('en-IN')})` : ''}
             </span>
           </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">Total registrations</span>
-        </div>
 
-        {/* Active Members */}
-        <div
-          onClick={() => onNavigate('members', 'ACTIVE')}
-          className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">Active Members</span>
-            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center">
-              <UserCheck className="w-4 h-4" />
+          {/* Membership Pending Dues */}
+          <div
+            onClick={() => onNavigate('members', 'PENDING_DUES')}
+            className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
+            title="View Members with Pending Dues"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">Membership Pending Dues</span>
+              <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
+                <CreditCard className="w-4 h-4" />
+              </div>
             </div>
+            <div className="mt-2 flex items-baseline justify-between">
+              <h3 className="text-2xl sm:text-3xl font-black text-rose-600 font-heading">
+                ₹{Number(total_pending_dues).toLocaleString('en-IN')}
+              </h3>
+            </div>
+            <span className="text-[10px] text-slate-400 mt-1 block">Balance gym fee to collect</span>
           </div>
-          <div className="mt-2 flex items-baseline justify-between">
-            <h3 className="text-2xl sm:text-3xl font-black text-emerald-600 font-heading">{active_members}</h3>
-            <span className="text-[10px] font-semibold text-slate-500">
-              {total_members > 0 ? Math.round((active_members / total_members) * 100) : 0}% Active
-            </span>
-          </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">Valid active subscriptions</span>
-        </div>
 
-        {/* Expiring Soon */}
-        <div
-          onClick={() => onNavigate('members', 'EXPIRING_SOON')}
-          className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">Expiring Soon (≤7d)</span>
-            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
-              <AlertTriangle className="w-4 h-4" />
+          {/* Supplements Pending Dues */}
+          <div
+            onClick={() => onNavigate('supplements', 'pending_dues')}
+            className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
+            title="View Supplements Pending Dues"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-500">Supplements Pending Dues</span>
+              <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center">
+                <Receipt className="w-4 h-4" />
+              </div>
             </div>
-          </div>
-          <div className="mt-2 flex items-baseline justify-between">
-            <h3 className="text-2xl sm:text-3xl font-black text-amber-600 font-heading">{expiring_soon_count}</h3>
-            <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-              Action Req.
-            </span>
-          </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">Follow-up for renewal</span>
-        </div>
-
-        {/* Expired Members */}
-        <div
-          onClick={() => onNavigate('members', 'EXPIRED')}
-          className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">Expired Members</span>
-            <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
-              <XCircle className="w-4 h-4" />
+            <div className="mt-2 flex items-baseline justify-between">
+              <h3 className="text-2xl sm:text-3xl font-black text-amber-600 font-heading">
+                ₹{Number(supplements_pending_dues).toLocaleString('en-IN')}
+              </h3>
             </div>
+            <span className="text-[10px] text-slate-400 mt-1 block">Store counter unpaid / partial bills</span>
           </div>
-          <div className="mt-2 flex items-baseline justify-between">
-            <h3 className="text-2xl sm:text-3xl font-black text-rose-600 font-heading">{expired_count}</h3>
-            <span className="text-[10px] font-semibold text-rose-600">Renewable</span>
-          </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">Requires plan extension</span>
-        </div>
-
-        {/* This Month's Revenue */}
-        <div
-          onClick={() => onNavigate('financials')}
-          className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">This Month Revenue</span>
-            <div className="w-8 h-8 rounded-xl bg-orange-100 text-orange-600 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline justify-between">
-            <h3 className="text-2xl sm:text-3xl font-black text-orange-600 font-heading">
-              ₹{Number(this_month_revenue).toLocaleString('en-IN')}
-            </h3>
-          </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">Current monthly collections</span>
-        </div>
-
-        {/* Outstanding Pending Dues */}
-        <div
-          onClick={() => onNavigate('members', 'PENDING_DUES')}
-          className="glass-panel glass-panel-hover p-4 sm:p-5 rounded-2xl cursor-pointer"
-          title="View Members with Pending Dues"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500">Pending Receivables</span>
-            <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
-              <CreditCard className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="mt-2 flex items-baseline justify-between">
-            <h3 className="text-2xl sm:text-3xl font-black text-rose-600 font-heading">
-              ₹{Number(total_pending_dues).toLocaleString('en-IN')}
-            </h3>
-          </div>
-          <span className="text-[10px] text-slate-400 mt-1 block">Balance fee to collect</span>
         </div>
       </div>
 
@@ -225,25 +267,38 @@ export const Dashboard: React.FC<DashboardProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Revenue Trend Area Chart */}
         <div className="lg:col-span-2 glass-panel p-5 sm:p-6 rounded-3xl space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <h3 className="text-base font-bold text-slate-900 font-heading">
                 Revenue & Collections Trend
               </h3>
-              <p className="text-xs text-slate-500">Monthly fees received across the last 6 months</p>
+              <p className="text-xs text-slate-500">Monthly breakdown of gym fees and supplement sales</p>
             </div>
-            <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2.5 py-1 rounded-full border border-orange-200">
-              ₹ INR
-            </span>
+
+            {/* Visual Legend Chips */}
+            <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-orange-50 border border-orange-200 rounded-full text-[11px] font-bold text-orange-700">
+                <span className="w-2 h-2 rounded-full bg-orange-500 shadow-sm" />
+                <span>Gym Fees</span>
+              </div>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-[11px] font-bold text-emerald-700">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-sm" />
+                <span>Supplements</span>
+              </div>
+            </div>
           </div>
 
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenue_chart} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <AreaChart data={formattedRevenueChart} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ea580c" stopOpacity={0.3} />
+                  <linearGradient id="feeRevenueGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#ea580c" stopOpacity={0.35} />
                     <stop offset="95%" stopColor="#ea580c" stopOpacity={0.0} />
+                  </linearGradient>
+                  <linearGradient id="supRevenueGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
@@ -257,15 +312,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     color: '#0f172a',
                     boxShadow: '0 4px 20px -2px rgba(0, 0, 0, 0.08)',
                   }}
-                  formatter={(value: any) => [`₹${Number(value).toLocaleString('en-IN')}`, 'Revenue']}
+                  formatter={(value: any, name: string) => [
+                    `₹${Number(value || 0).toLocaleString('en-IN')}`,
+                    name === 'fee_revenue' ? 'Gym Fees' : name === 'supplement_revenue' ? 'Supplements' : name
+                  ]}
                 />
                 <Area
                   type="monotone"
-                  dataKey="revenue"
+                  dataKey="fee_revenue"
+                  name="Gym Fees"
                   stroke="#ea580c"
-                  strokeWidth={3}
+                  strokeWidth={2.5}
                   fillOpacity={1}
-                  fill="url(#revenueGrad)"
+                  fill="url(#feeRevenueGrad)"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="supplement_revenue"
+                  name="Supplements"
+                  stroke="#10b981"
+                  strokeWidth={2.5}
+                  fillOpacity={1}
+                  fill="url(#supRevenueGrad)"
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -378,6 +446,87 @@ export const Dashboard: React.FC<DashboardProps> = ({
           {plan_distribution.length === 0 && (
             <div className="col-span-full text-xs text-slate-400 text-center py-6">
               No active plan subscriptions to display yet.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Most Sold & Popular Products Breakdown */}
+      <div className="glass-panel p-5 sm:p-6 rounded-3xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Package className="w-5 h-5 text-orange-500" />
+              <h3 className="text-base font-bold text-slate-900 font-heading">
+                Most Sold Products Breakdown
+              </h3>
+              {(kpis.supplements_total_profit ?? 0) > 0 && (
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                  <TrendingUp className="w-3 h-3 text-emerald-600" />
+                  <span>Total Profit: ₹{Number(kpis.supplements_total_profit).toLocaleString('en-IN')} ({kpis.supplements_profit_margin ?? 0}%)</span>
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">Top-selling supplements and nutrition products with sales & profit margins</p>
+          </div>
+          <button
+            onClick={() => onNavigate('supplements')}
+            className="text-[11px] font-bold text-orange-600 hover:text-orange-700 flex items-center gap-1 self-start sm:self-auto"
+          >
+            <span>Store Inventory</span>
+            <ArrowUpRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
+          {popular_products?.map((item: any, idx: number) => {
+            const totalUnits = popular_products.reduce((acc: number, p: any) => acc + (p.quantity ?? 0), 0);
+            const qty = item.quantity ?? 0;
+            const rev = item.revenue ?? 0;
+            const profit = item.profit;
+            const margin = item.margin;
+            const pct = totalUnits > 0 ? Math.round((qty / totalUnits) * 100) : 0;
+            const color = PRODUCT_COLORS[idx % PRODUCT_COLORS.length];
+
+            return (
+              <div key={`${item.name}-${idx}`} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5 hover:border-orange-300 transition-colors">
+                <div className="flex justify-between items-start text-xs font-semibold gap-2">
+                  <div className="min-w-0">
+                    <span className="text-slate-900 font-bold block truncate">{item.name}</span>
+                    {item.brand && (
+                      <span className="text-[10px] text-slate-400 font-medium block truncate">{item.brand}</span>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-slate-800 font-black block">{qty} sold</span>
+                    <span className="text-[10px] text-slate-500 font-medium block">Sales: ₹{Number(rev).toLocaleString('en-IN')}</span>
+                    {profit !== undefined && (
+                      <span className="text-[10px] text-emerald-600 font-bold block">
+                        Profit: ₹{Number(profit).toLocaleString('en-IN')} ({margin ?? 0}%)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${pct}%`, backgroundColor: color }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-slate-400">
+                    <span>Share of units sold</span>
+                    <span className="font-bold text-slate-600">{pct}%</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {(!popular_products || popular_products.length === 0) && (
+            <div className="col-span-full text-xs text-slate-400 text-center py-6">
+              No supplement sales recorded yet. Once products are sold, their popularity breakdown will appear here.
             </div>
           )}
         </div>

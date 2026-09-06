@@ -29,6 +29,7 @@ const AppContent: React.FC = () => {
   const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
   const [renewMemberId, setRenewMemberId] = useState<number | null>(null);
   const [membersTab, setMembersTab] = useState<string>('ALL');
+  const [supplementsTab, setSupplementsTab] = useState<'inventory' | 'sales' | 'pending_dues'>('inventory');
 
   // Global Modals State
   const [activeReceipt, setActiveReceipt] = useState<ReceiptData | null>(null);
@@ -72,6 +73,9 @@ const AppContent: React.FC = () => {
     }
     if (page === 'members') {
       setMembersTab(tab || 'ALL');
+    }
+    if (page === 'supplements') {
+      setSupplementsTab((tab as 'inventory' | 'sales' | 'pending_dues') || 'inventory');
     }
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -193,7 +197,7 @@ const AppContent: React.FC = () => {
         />
       )}
 
-      {currentPage === 'supplements' && <Supplements />}
+      {currentPage === 'supplements' && <Supplements initialTab={supplementsTab} />}
 
       {currentPage === 'expenses' && <Expenses />}
 

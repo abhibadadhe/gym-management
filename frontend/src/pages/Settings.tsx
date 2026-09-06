@@ -9,6 +9,7 @@ import { GymSettings, Member, Payment, Expense, MembershipPlan, SupplementSale }
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { getTodayDateString } from '../utils/date';
 
 export const Settings: React.FC = () => {
   const { gym, refreshGymSettings, inactivityTimeoutMinutes, setInactivityTimeout } = useAuth();
@@ -109,7 +110,7 @@ export const Settings: React.FC = () => {
         api.getSupplementSales(),
       ]);
 
-      const todayStr = new Date().toISOString().split('T')[0];
+      const todayStr = getTodayDateString();
       let csv = `MORYA FITNESS - COMPLETE DATABASE BACKUP (${todayStr})\n`;
       csv += `Gym: ${formData.name}, ${formData.address}\n\n`;
 

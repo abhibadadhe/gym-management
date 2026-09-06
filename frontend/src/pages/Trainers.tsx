@@ -8,6 +8,7 @@ import { api } from '../services/api';
 import { Modal } from '../components/common/Modal';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { getTodayDateString } from '../utils/date';
 
 export const Trainers: React.FC = () => {
   const { user } = useAuth();
@@ -25,7 +26,7 @@ export const Trainers: React.FC = () => {
     email: '',
     specialization: 'Strength & Conditioning',
     salary: '25000',
-    joining_date: new Date().toISOString().split('T')[0],
+    joining_date: getTodayDateString(),
     status: 'ACTIVE',
     bio: '',
   });
@@ -54,7 +55,7 @@ export const Trainers: React.FC = () => {
       email: '',
       specialization: 'Strength & Conditioning',
       salary: '25000',
-      joining_date: new Date().toISOString().split('T')[0],
+      joining_date: getTodayDateString(),
       status: 'ACTIVE',
       bio: '',
     });

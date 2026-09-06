@@ -312,13 +312,29 @@ export const api = {
     const res = await apiClient.post('/supplements/sales/', data);
     return res.data;
   },
-  getSupplementReceipt: async (id: number): Promise<SupplementReceiptData> => {
-    const res = await apiClient.get(`/supplements/sales/${id}/receipt/`);
+  getSupplementPayments: async (params?: {
+    method?: string;
+    start_date?: string;
+    end_date?: string;
+    search?: string;
+    member_id?: number;
+  }): Promise<SupplementPayment[]> => {
+    const res = await apiClient.get('/supplements/payments/', { params });
     return res.data;
   },
-  getSupplementInvoicePdf: async (idOrNumber: number | string): Promise<Blob> => {
+  getSupplementReceipt: async (id: number, paymentId?: number): Promise<SupplementReceiptData> => {
+    const url = paymentId
+      ? `/supplements/sales/${id}/receipt/?payment_id=${paymentId}`
+      : `/supplements/sales/${id}/receipt/`;
+    const res = await apiClient.get(url);
+    return res.data;
+  },
+  getSupplementInvoicePdf: async (idOrNumber: number | string, paymentId?: number): Promise<Blob> => {
     if (typeof idOrNumber === 'number' || /^\d+$/.test(String(idOrNumber).trim())) {
-      const res = await apiClient.get(`/supplements/sales/${idOrNumber}/pdf/`, { responseType: 'blob' });
+      const res = await apiClient.get(`/supplements/sales/${idOrNumber}/pdf/`, {
+        params: paymentId ? { payment_id: paymentId } : undefined,
+        responseType: 'blob'
+      });
       return res.data;
     }
     const res = await apiClient.get(`/public/invoices/${encodeURIComponent(String(idOrNumber))}/pdf/`, { responseType: 'blob' });
@@ -326,6 +342,14 @@ export const api = {
   },
   getSupplementSummary: async (): Promise<SupplementSummary> => {
     const res = await apiClient.get('/supplements/sales/summary/');
+    return res.data;
+  },
+  getSupplementPendingDues: async (): Promise<SupplementSale[]> => {
+    const res = await apiClient.get('/supplements/sales/pending-dues/');
+    return res.data;
+  },
+  collectSupplementDue: async (id: number | string, data: { amount: number; payment_method: string; payment_date?: string; notes?: string }): Promise<any> => {
+    const res = await apiClient.post(`/supplements/sales/${id}/collect-due/`, data);
     return res.data;
   },
   resetSystemData: async (data: {

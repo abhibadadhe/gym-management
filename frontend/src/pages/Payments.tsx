@@ -8,6 +8,7 @@ import { api } from '../services/api';
 import { Modal } from '../components/common/Modal';
 import { useToast } from '../context/ToastContext';
 import confetti from 'canvas-confetti';
+import { getTodayDateString, formatDisplayDate } from '../utils/date';
 
 interface PaymentsProps {
   onViewReceipt: (receiptData: ReceiptData) => void;
@@ -33,7 +34,7 @@ export const Payments: React.FC<PaymentsProps> = ({
   const [collectTarget, setCollectTarget] = useState<MemberMembership | null>(null);
   const [collectAmount, setCollectAmount] = useState('');
   const [collectMethod, setCollectMethod] = useState('UPI');
-  const [collectDate, setCollectDate] = useState(new Date().toISOString().split('T')[0]);
+  const [collectDate, setCollectDate] = useState(getTodayDateString());
   const [collectRef, setCollectRef] = useState('');
   const [isCollecting, setIsCollecting] = useState(false);
 
@@ -90,12 +91,13 @@ export const Payments: React.FC<PaymentsProps> = ({
       p.receipt_number?.toLowerCase().includes(q) ||
       p.member_name?.toLowerCase().includes(q) ||
       p.member_id?.toLowerCase().includes(q) ||
+      p.plan_name?.toLowerCase().includes(q) ||
       p.transaction_ref?.toLowerCase().includes(q)
     );
   });
 
   const totalCollected = filteredPayments.reduce((sum, p) => sum + Number(p.amount), 0);
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getTodayDateString();
   const todayCollected = payments
     .filter((p) => p.payment_date === todayStr)
     .reduce((sum, p) => sum + Number(p.amount), 0);
@@ -105,7 +107,7 @@ export const Payments: React.FC<PaymentsProps> = ({
     setCollectTarget(due);
     setCollectAmount(due.pending_amount.toString());
     setCollectMethod('UPI');
-    setCollectDate(new Date().toISOString().split('T')[0]);
+    setCollectDate(getTodayDateString());
     setCollectRef('');
     setIsCollectModalOpen(true);
   };
@@ -122,7 +124,7 @@ export const Payments: React.FC<PaymentsProps> = ({
         amount: Number(collectAmount),
         payment_method: collectMethod,
         transaction_ref: collectRef.trim(),
-        payment_date: collectDate || new Date().toISOString().split('T')[0],
+        payment_date: collectDate || getTodayDateString(),
         notes: `Dues clearance payment for ${collectTarget.plan_name}`,
       });
 
@@ -184,7 +186,7 @@ export const Payments: React.FC<PaymentsProps> = ({
           <span className="text-2xl font-black text-orange-600 font-heading mt-0.5 block">
             ₹{todayCollected.toLocaleString('en-IN')}
           </span>
-          <span className="text-[11px] text-slate-400 block mt-1">Recorded on {todayStr}</span>
+          <span className="text-[11px] text-slate-400 block mt-1">Recorded on {formatDisplayDate(todayStr)}</span>
         </div>
 
         <div className="glass-panel p-5 rounded-2xl">
@@ -348,7 +350,7 @@ export const Payments: React.FC<PaymentsProps> = ({
                     <th className="py-3 px-4">Plan</th>
                     <th className="py-3 px-4">Method & Ref</th>
                     <th className="py-3 px-4">Amount Paid</th>
-                    <th className="py-3 px-4 text-right">Receipt</th>
+                    <th className="py-3 px-4 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -360,9 +362,18 @@ export const Payments: React.FC<PaymentsProps> = ({
                       </td>
                       <td className="py-3 px-4">
                         <span className="font-bold text-slate-900 block">{p.member_name}</span>
-                        <span className="text-[11px] text-slate-400 font-mono">{p.member_id}</span>
+                        {p.member_id && (
+                          <span className="text-[11px] text-slate-400 font-mono">{p.member_id}</span>
+                        )}
                       </td>
-                      <td className="py-3 px-4 text-slate-600">{p.plan_name || 'Gym Subscription'}</td>
+                      <td className="py-3 px-4 text-slate-600 font-medium">
+                        <span className="block text-slate-800">{p.plan_name || 'Gym Subscription'}</span>
+                        {p.is_dues_payment && (
+                          <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200 mt-0.5">
+                            Dues Settlement
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3 px-4">
                         <span className="font-semibold text-slate-800 block">{p.payment_method}</span>
                         {p.transaction_ref && (

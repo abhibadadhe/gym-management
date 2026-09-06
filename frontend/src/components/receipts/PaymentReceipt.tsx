@@ -89,18 +89,51 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
     Math.max(0, planBasePrice - discountApplied)
   );
 
-  const amountPaid = Number(
-    receipt.amount_paid ??
-    receipt.payment?.amount ??
-    receipt.plan?.paid_amount ??
-    finalPayable
+  const isDuesReceipt = Boolean(receipt.is_dues_payment || receipt.receipt_type === 'DUES_RECEIPT');
+  const alreadyPaid = Number(receipt.already_paid ?? 0);
+  const duesPaid = Number(receipt.this_payment_amount ?? receipt.amount_paid ?? 0);
+  const totalAmountPaid = isDuesReceipt
+    ? Number(receipt.total_paid_amount ?? (alreadyPaid + duesPaid))
+    : Number(receipt.amount_paid ?? finalPayable);
+  const remainingDues = Number(
+    receipt.remaining_pending_dues ?? Math.max(0, finalPayable - totalAmountPaid)
   );
 
-  const remainingDues = Number(
-    receipt.remaining_pending_dues ??
-    receipt.plan?.pending_amount ??
-    Math.max(0, finalPayable - amountPaid)
-  );
+  const getDefaultWhatsAppMessage = () => {
+    let paymentBreakdownText = `💰 *Net Payable:* ₹${finalPayable.toLocaleString('en-IN')}\n`;
+    if (isDuesReceipt) {
+      paymentBreakdownText +=
+        `💵 *Already Paid:* ₹${alreadyPaid.toLocaleString('en-IN')}\n` +
+        `💳 *Pending Dues Paid:* ₹${duesPaid.toLocaleString('en-IN')}\n` +
+        `✅ *Total Amount Paid:* ₹${totalAmountPaid.toLocaleString('en-IN')}\n`;
+    } else {
+      paymentBreakdownText += `✅ *Amount Paid:* ₹${totalAmountPaid.toLocaleString('en-IN')}\n`;
+    }
+
+    if (remainingDues > 0) {
+      paymentBreakdownText += `⚠️ *Balance Due:* ₹${remainingDues.toLocaleString('en-IN')}\n`;
+    } else {
+      paymentBreakdownText += `✅ *Payment Status:* Paid in Full\n`;
+    }
+
+    return `🏋️‍♂️ *${gymName} — OFFICIAL FEE RECEIPT*\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `Dear *${memberName}*,\n\n` +
+      `Thank you for your payment at *${receipt.gym?.name || 'Morya Fitness'}*! Here are your official fee receipt details:\n\n` +
+      `📄 *Receipt No:* ${receiptNo}\n` +
+      `📅 *Date:* ${formattedDate}\n` +
+      `💪 *Plan:* ${planName} (${durationDays} Days)\n` +
+      (planDescription ? `📝 *Details:* ${planDescription}\n` : '') +
+      (validityRange ? `🗓️ *Validity:* ${validityRange}\n` : '') +
+      `💳 *Payment Mode:* ${paymentMethod}\n` +
+      (transactionRef ? `🔖 *Ref / UTR:* ${transactionRef}\n` : '') +
+      `👤 *Cashier:* ${cashierName}\n` +
+      paymentBreakdownText +
+      `━━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📍 *Address:* ${gymAddress}\n` +
+      `📞 *Helpdesk:* ${gymPhone} | UPI: ${gymUpi}\n\n` +
+      `_Welcome to ${receipt.gym?.name || 'Morya Fitness'}! Stay consistent & achieve your fitness goals!_ 🏆`;
+  };
 
   const handleSendWhatsApp = async () => {
     setIsSending(true);
@@ -114,26 +147,7 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
           ? `91${cleanPhone}`
           : cleanPhone;
 
-      const message = `🏋️‍♂️ *${gymName} — OFFICIAL FEE RECEIPT*\n` +
-        `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `Dear *${memberName}*,\n\n` +
-        `Thank you for your payment at *${receipt.gym?.name || 'Morya Fitness'}*! Here are your official fee receipt details:\n\n` +
-        `📄 *Receipt No:* ${receiptNo}\n` +
-        `📅 *Date:* ${formattedDate}\n` +
-        `💪 *Plan:* ${planName} (${durationDays} Days)\n` +
-        (planDescription ? `📝 *Details:* ${planDescription}\n` : '') +
-        (validityRange ? `🗓️ *Validity:* ${validityRange}\n` : '') +
-        `💳 *Payment Mode:* ${paymentMethod}\n` +
-        (transactionRef ? `🔖 *Ref / UTR:* ${transactionRef}\n` : '') +
-        `👤 *Cashier:* ${cashierName}\n` +
-        `💰 *Amount Paid:* ₹${amountPaid.toLocaleString('en-IN')}\n` +
-        (remainingDues > 0
-          ? `⚠️ *Balance Dues Remaining:* ₹${remainingDues.toLocaleString('en-IN')}\n`
-          : `✅ *Payment Status:* Paid in Full\n`) +
-        `━━━━━━━━━━━━━━━━━━━━━━━\n` +
-        `📍 *Address:* ${gymAddress}\n` +
-        `📞 *Helpdesk:* ${gymPhone} | UPI: ${gymUpi}\n\n` +
-        `_Welcome to ${receipt.gym?.name || 'Morya Fitness'}! Stay consistent & achieve your fitness goals!_ 🏆`;
+      const message = getDefaultWhatsAppMessage();
 
       const fileName = `Receipt_${receiptNo}.pdf`;
       let pdfFile: File | null = null;
@@ -346,7 +360,7 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
               textTransform: 'uppercase',
               letterSpacing: '0.5px',
             }}>
-              OFFICIAL FEE RECEIPT
+              {isDuesReceipt ? 'DUES SETTLEMENT RECEIPT' : 'OFFICIAL FEE RECEIPT'}
             </div>
             <div style={{
               fontFamily: 'monospace',
@@ -512,95 +526,172 @@ export const PaymentReceipt: React.FC<PaymentReceiptProps> = ({ receipt, onClose
         {/* Financial Calculation Breakdown */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
           <div style={{ width: '300px' }}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '12px',
-              padding: '4px 0',
-              color: '#475569',
-            }}>
-              <span>Plan Base Fee:</span>
-              <span>₹{planBasePrice.toLocaleString('en-IN')}</span>
-            </div>
+            {!isDuesReceipt && (
+                  <>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontSize: '12px',
+                      padding: '4px 0',
+                      color: '#475569',
+                    }}>
+                      <span>Plan Base Fee:</span>
+                      <span>₹{planBasePrice.toLocaleString('en-IN')}</span>
+                    </div>
 
-            {discountApplied > 0 && (
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: '12px',
-                padding: '4px 0',
-                color: '#15803d',
-                fontWeight: 600,
-              }}>
-                <span>Discount Applied:</span>
-                <span>-₹{discountApplied.toLocaleString('en-IN')}</span>
+                    {discountApplied > 0 && (
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontSize: '12px',
+                        padding: '4px 0',
+                        color: '#15803d',
+                        fontWeight: 600,
+                      }}>
+                        <span>Discount Applied:</span>
+                        <span>-₹{discountApplied.toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  fontSize: '12px',
+                  padding: '6px 0 4px',
+                  color: '#0f172a',
+                  fontWeight: 800,
+                  borderTop: '1px solid #e2e8f0',
+                  marginTop: '4px',
+                }}>
+                  <span>Net Payable:</span>
+                  <span>₹{finalPayable.toLocaleString('en-IN')}</span>
+                </div>
+
+                {isDuesReceipt ? (
+                  <>
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontSize: '12px',
+                      padding: '4px 0',
+                      color: '#475569',
+                      marginTop: '4px',
+                    }}>
+                      <span>Already Paid:</span>
+                      <span style={{ fontWeight: 700, color: '#0f172a' }}>
+                        ₹{alreadyPaid.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontSize: '12px',
+                      padding: '4px 0',
+                      color: '#475569',
+                    }}>
+                      <span>Pending Dues:</span>
+                      <span style={{ fontWeight: 700, color: '#0f172a' }}>
+                        ₹{duesPaid.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: '14px',
+                      fontWeight: 900,
+                      color: '#15803d',
+                      background: '#f0fdf4',
+                      padding: '6px 10px',
+                      borderRadius: '6px',
+                      border: '1px solid #bbf7d0',
+                      marginTop: '6px',
+                    }}>
+                      <span>Total Amount Paid (INR):</span>
+                      <span>₹{totalAmountPaid.toLocaleString('en-IN')}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: '14px',
+                    fontWeight: 900,
+                    color: '#15803d',
+                    background: '#f0fdf4',
+                    padding: '6px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid #bbf7d0',
+                    marginTop: '6px',
+                  }}>
+                    <span>Amount Paid (INR):</span>
+                    <span>₹{totalAmountPaid.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+
+                {remainingDues > 0 && (
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    color: '#b91c1c',
+                    background: '#fef2f2',
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    border: '1px solid #fecaca',
+                    marginTop: '6px',
+                  }}>
+                    <span>Balance Due:</span>
+                    <span>₹{remainingDues.toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: '11px',
+                  fontWeight: 'bold',
+                  padding: '6px 0 2px',
+                  marginTop: '6px',
+                  borderTop: '1px dashed #e2e8f0',
+                }}>
+                  <span style={{ color: '#475569' }}>Payment Status:</span>
+                  {remainingDues > 0 ? (
+                    <span style={{
+                      color: '#b45309',
+                      background: '#fef3c7',
+                      padding: '2px 8px',
+                      borderRadius: '9999px',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      border: '1px solid #fde68a',
+                    }}>
+                      Partially Paid
+                    </span>
+                  ) : (
+                    <span style={{
+                      color: '#15803d',
+                      background: '#dcfce7',
+                      padding: '2px 8px',
+                      borderRadius: '9999px',
+                      fontSize: '10px',
+                      fontWeight: 800,
+                      border: '1px solid #bbf7d0',
+                    }}>
+                      ✓ Paid in Full
+                    </span>
+                  )}
+                </div>
               </div>
-            )}
-
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              fontSize: '12px',
-              padding: '6px 0 4px',
-              color: '#0f172a',
-              fontWeight: 800,
-              borderTop: '1px solid #e2e8f0',
-              marginTop: '4px',
-            }}>
-              <span>Net Payable:</span>
-              <span>₹{finalPayable.toLocaleString('en-IN')}</span>
             </div>
-
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              fontSize: '14px',
-              fontWeight: 900,
-              color: '#15803d',
-              background: '#f0fdf4',
-              padding: '6px 10px',
-              borderRadius: '6px',
-              border: '1px solid #bbf7d0',
-              marginTop: '6px',
-            }}>
-              <span>Amount Paid (INR):</span>
-              <span>₹{amountPaid.toLocaleString('en-IN')}</span>
-            </div>
-
-            {remainingDues > 0 ? (
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                fontSize: '12px',
-                fontWeight: 800,
-                color: '#b91c1c',
-                background: '#fef2f2',
-                padding: '4px 8px',
-                borderRadius: '6px',
-                border: '1px solid #fecaca',
-                marginTop: '6px',
-              }}>
-                <span>Balance Due:</span>
-                <span>₹{remainingDues.toLocaleString('en-IN')}</span>
-              </div>
-            ) : (
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                fontSize: '11px',
-                color: '#15803d',
-                fontWeight: 'bold',
-                padding: '4px 0',
-                marginTop: '4px',
-              }}>
-                <span>Payment Status:</span>
-                <span>✓ Paid in Full</span>
-              </div>
-            )}
-          </div>
-        </div>
 
         {/* Terms & Authorized Stamp */}
         <div style={{

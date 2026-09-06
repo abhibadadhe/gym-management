@@ -3,6 +3,7 @@ import { RefreshCw, ArrowLeft, CheckCircle2, AlertCircle, Search, X, ChevronDown
 import { Member, MembershipPlan, ReceiptData } from '../types';
 import { api } from '../services/api';
 import confetti from 'canvas-confetti';
+import { getTodayDateString } from '../utils/date';
 
 interface RenewMembershipProps {
   memberId?: number;
@@ -20,7 +21,7 @@ export const RenewMembership: React.FC<RenewMembershipProps> = ({
   const [selectedMemberId, setSelectedMemberId] = useState<string>(memberId ? memberId.toString() : '');
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<string>('');
-  const [startDate, setStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState<string>(getTodayDateString());
   const [discount, setDiscount] = useState<string>('0');
   const [paidAmount, setPaidAmount] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<string>('UPI');
@@ -60,15 +61,15 @@ export const RenewMembership: React.FC<RenewMembershipProps> = ({
           if (m.expiry_date && new Date(m.expiry_date) >= new Date()) {
             const nextDay = new Date(m.expiry_date);
             nextDay.setDate(nextDay.getDate() + 1);
-            setStartDate(nextDay.toISOString().split('T')[0]);
+            setStartDate(getTodayDateString(nextDay));
           } else {
-            setStartDate(new Date().toISOString().split('T')[0]);
+            setStartDate(getTodayDateString());
           }
         } else {
           setSelectedMember(null);
           setSelectedMemberId('');
           setMemberSearchQuery('');
-          setStartDate(new Date().toISOString().split('T')[0]);
+          setStartDate(getTodayDateString());
         }
       } catch (err) {
         console.error(err);
@@ -91,9 +92,9 @@ export const RenewMembership: React.FC<RenewMembershipProps> = ({
       if (m.expiry_date && new Date(m.expiry_date) >= new Date()) {
         const nextDay = new Date(m.expiry_date);
         nextDay.setDate(nextDay.getDate() + 1);
-        setStartDate(nextDay.toISOString().split('T')[0]);
+        setStartDate(getTodayDateString(nextDay));
       } else {
-        setStartDate(new Date().toISOString().split('T')[0]);
+        setStartDate(getTodayDateString());
       }
     } catch (e) {
       console.error(e);

@@ -10,6 +10,7 @@ from .views import (
     WorkoutPlanViewSet, ExpenseViewSet, ExpenseCategoryViewSet, FinancialSummaryView,
     ReportsView, AuditLogViewSet, DatabaseBackupView, ResetSystemDataView,
     SupplementCategoryViewSet, SupplementProductViewSet, SupplementSaleViewSet,
+    SupplementPaymentViewSet,
     PublicReceiptPdfView, PublicInvoicePdfView
 )
 
@@ -26,6 +27,7 @@ router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
 router.register(r'supplements/categories', SupplementCategoryViewSet, basename='supplement-category')
 router.register(r'supplements/products', SupplementProductViewSet, basename='supplement-product')
 router.register(r'supplements/sales', SupplementSaleViewSet, basename='supplement-sale')
+router.register(r'supplements/payments', SupplementPaymentViewSet, basename='supplement-payment')
 
 urlpatterns = [
     # Auth endpoints

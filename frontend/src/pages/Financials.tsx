@@ -116,8 +116,8 @@ export const Financials: React.FC = () => {
           <h3 className="text-2xl font-black text-amber-900 font-heading">
             {formatINR(summary.supplement_revenue?.all_time ?? 0)}
           </h3>
-          <span className="text-[11px] text-slate-500 block font-medium">
-            Supplement & nutrition store sales
+          <span className="text-[11px] text-emerald-700 block font-semibold">
+            Profit: {formatINR(summary.supplement_revenue?.total_profit ?? 0)} ({summary.supplement_revenue?.profit_margin ?? 0}%)
           </span>
         </div>
 

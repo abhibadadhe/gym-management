@@ -2,6 +2,7 @@ import io
 import os
 import html
 from django.conf import settings as django_settings
+from django.db.models import Q
 from api.models import GymSettings
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -52,8 +53,25 @@ def generate_payment_receipt_pdf(payment) -> bytes:
     plan_price = float(membership.price) if membership else float(payment.amount)
     discount = float(membership.discount) if membership else 0.0
     final_amount = float(membership.final_amount) if membership else float(payment.amount)
-    paid_amount = float(payment.amount)
-    remaining_dues = float(membership.pending_amount) if membership else 0.0
+
+    if membership:
+        membership_payments = list(membership.payments.order_by('created_at', 'id'))
+        first_payment = membership_payments[0] if membership_payments else payment
+        is_dues_payment = bool(first_payment and payment.id != first_payment.id)
+        prior_payments = [
+            p for p in membership_payments
+            if (p.created_at < payment.created_at or (p.created_at == payment.created_at and p.id < payment.id))
+        ]
+        already_paid = float(sum(p.amount for p in prior_payments))
+        this_payment_amount = float(payment.amount)
+        total_paid_up_to = already_paid + this_payment_amount
+        remaining_dues = max(0.0, final_amount - total_paid_up_to)
+    else:
+        is_dues_payment = False
+        already_paid = 0.0
+        this_payment_amount = float(payment.amount)
+        total_paid_up_to = this_payment_amount
+        remaining_dues = max(0.0, final_amount - total_paid_up_to)
 
     raw_pm = (payment.payment_method or 'UPI').upper()
     payment_mode = 'Cash' if 'CASH' in raw_pm else 'UPI'
@@ -163,6 +181,7 @@ def generate_payment_receipt_pdf(payment) -> bytes:
 
     calc_status_label = ParagraphStyle('CalcStatusLabel', fontName='Helvetica-Bold', fontSize=8.5, leading=11, textColor=colors.HexColor('#059669'))
     calc_status_val = ParagraphStyle('CalcStatusVal', fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#059669'))
+    calc_partial_status_val = ParagraphStyle('CalcPartialStatusVal', fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#D97706'))
 
     calc_due_label = ParagraphStyle('CalcDueLabel', fontName='Helvetica-Bold', fontSize=8.5, leading=11, textColor=colors.HexColor('#DC2626'))
     calc_due_val = ParagraphStyle('CalcDueVal', fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#DC2626'))
@@ -186,8 +205,9 @@ def generate_payment_receipt_pdf(payment) -> bytes:
         Paragraph(f"{gym_address}<br/>Phone: +91 7219188002 | UPI: 7219188002@ybl", gym_addr_style),
     ]
 
+    badge_title = "DUES SETTLEMENT RECEIPT" if is_dues_payment else "OFFICIAL FEE RECEIPT"
     badge_data = [
-        [Paragraph("OFFICIAL FEE RECEIPT", badge_label_style)],
+        [Paragraph(badge_title, badge_label_style)],
         [Paragraph(payment.receipt_number, badge_no_style)],
         [Paragraph(f"Date: {payment_date_str}", badge_date_style)],
     ]
@@ -278,22 +298,45 @@ def generate_payment_receipt_pdf(payment) -> bytes:
 
     # 4. Financial Calculation Summary (Aligned to Right)
     calc_w = 240
-    calc_rows = [
-        [Paragraph("Plan Base Fee:", calc_label), Paragraph(f"Rs. {plan_price:,.0f}", calc_val)],
-    ]
-    if discount > 0:
-        calc_rows.append([Paragraph("Discount Applied:", calc_discount_label), Paragraph(f"-Rs. {discount:,.0f}", calc_discount_val)])
-    calc_rows.append([Paragraph("Net Payable:", calc_net_label), Paragraph(f"Rs. {final_amount:,.0f}", calc_net_val)])
-    calc_rows.append([Paragraph("Amount Paid (INR):", calc_paid_label), Paragraph(f"Rs. {paid_amount:,.0f}", calc_paid_val)])
-
-    if remaining_dues > 0:
-        calc_rows.append([Paragraph("Balance Due:", calc_due_label), Paragraph(f"Rs. {remaining_dues:,.0f}", calc_due_val)])
+    if is_dues_payment:
+        calc_rows = [
+            [Paragraph("Net Payable:", calc_net_label), Paragraph(f"Rs. {final_amount:,.0f}", calc_net_val)],
+            [Paragraph("Already Paid:", calc_label), Paragraph(f"Rs. {already_paid:,.0f}", calc_val)],
+            [Paragraph("Pending Dues:", calc_label), Paragraph(f"Rs. {this_payment_amount:,.0f}", calc_val)],
+            [Paragraph("Total Amount Paid (INR):", calc_paid_label), Paragraph(f"Rs. {total_paid_up_to:,.0f}", calc_paid_val)],
+        ]
+        if remaining_dues > 0:
+            calc_rows.append([Paragraph("Balance Due:", calc_due_label), Paragraph(f"Rs. {remaining_dues:,.0f}", calc_due_val)])
+            calc_rows.append([Paragraph("Payment Status:", calc_label), Paragraph("Partially Paid", calc_partial_status_val)])
+        else:
+            calc_rows.append([Paragraph("Payment Status:", calc_status_label), Paragraph("✓ Paid in Full", calc_status_val)])
     else:
-        calc_rows.append([Paragraph("Payment Status:", calc_status_label), Paragraph("✓ Paid in Full", calc_status_val)])
+        calc_rows = [
+            [Paragraph("Plan Base Fee:", calc_label), Paragraph(f"Rs. {plan_price:,.0f}", calc_val)],
+        ]
+        if discount > 0:
+            calc_rows.append([Paragraph("Discount Applied:", calc_discount_label), Paragraph(f"-Rs. {discount:,.0f}", calc_discount_val)])
+        calc_rows.append([Paragraph("Net Payable:", calc_net_label), Paragraph(f"Rs. {final_amount:,.0f}", calc_net_val)])
+        calc_rows.append([Paragraph("Amount Paid (INR):", calc_paid_label), Paragraph(f"Rs. {this_payment_amount:,.0f}", calc_paid_val)])
+
+        if remaining_dues > 0:
+            calc_rows.append([Paragraph("Balance Due:", calc_due_label), Paragraph(f"Rs. {remaining_dues:,.0f}", calc_due_val)])
+            calc_rows.append([Paragraph("Payment Status:", calc_label), Paragraph("Partially Paid", calc_partial_status_val)])
+        else:
+            calc_rows.append([Paragraph("Payment Status:", calc_status_label), Paragraph("✓ Paid in Full", calc_status_val)])
 
     calc_inner_table = Table(calc_rows, colWidths=[120, 120])
-    paid_row_idx = len(calc_rows) - 2
-    status_row_idx = len(calc_rows) - 1
+    paid_row_idx = None
+    due_row_idx = None
+    status_row_idx = None
+    for idx, row in enumerate(calc_rows):
+        t = row[0].text if hasattr(row[0], 'text') else ''
+        if 'Amount Paid' in t:
+            paid_row_idx = idx
+        elif 'Balance Due' in t:
+            due_row_idx = idx
+        elif 'Payment Status' in t:
+            status_row_idx = idx
 
     calc_style_commands = [
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
@@ -301,27 +344,36 @@ def generate_payment_receipt_pdf(payment) -> bytes:
         ('BOTTOMPADDING', (0,0), (-1,-1), 2.5),
         ('LEFTPADDING', (0,0), (-1,-1), 4),
         ('RIGHTPADDING', (0,0), (-1,-1), 4),
-        ('LINEABOVE', (0, paid_row_idx - 1), (-1, paid_row_idx - 1), 1, colors.HexColor('#E2E8F0')),
-        ('BACKGROUND', (0, paid_row_idx), (-1, paid_row_idx), colors.HexColor('#ECFDF5')),
-        ('BOX', (0, paid_row_idx), (-1, paid_row_idx), 1, colors.HexColor('#A7F3D0')),
-        ('TOPPADDING', (0, paid_row_idx), (-1, paid_row_idx), 5),
-        ('BOTTOMPADDING', (0, paid_row_idx), (-1, paid_row_idx), 5),
     ]
-
-    if remaining_dues > 0:
+    if paid_row_idx is not None:
         calc_style_commands.extend([
-            ('BACKGROUND', (0, status_row_idx), (-1, status_row_idx), colors.HexColor('#FEF2F2')),
-            ('BOX', (0, status_row_idx), (-1, status_row_idx), 1, colors.HexColor('#FECACA')),
-            ('TOPPADDING', (0, status_row_idx), (-1, status_row_idx), 4),
-            ('BOTTOMPADDING', (0, status_row_idx), (-1, status_row_idx), 4),
+            ('LINEABOVE', (0, paid_row_idx), (-1, paid_row_idx), 1, colors.HexColor('#E2E8F0')),
+            ('BACKGROUND', (0, paid_row_idx), (-1, paid_row_idx), colors.HexColor('#ECFDF5')),
+            ('BOX', (0, paid_row_idx), (-1, paid_row_idx), 1, colors.HexColor('#A7F3D0')),
+            ('TOPPADDING', (0, paid_row_idx), (-1, paid_row_idx), 5),
+            ('BOTTOMPADDING', (0, paid_row_idx), (-1, paid_row_idx), 5),
         ])
-    else:
+    if due_row_idx is not None:
         calc_style_commands.extend([
-            ('BACKGROUND', (0, status_row_idx), (-1, status_row_idx), colors.HexColor('#ECFDF5')),
-            ('BOX', (0, status_row_idx), (-1, status_row_idx), 1, colors.HexColor('#A7F3D0')),
-            ('TOPPADDING', (0, status_row_idx), (-1, status_row_idx), 4),
-            ('BOTTOMPADDING', (0, status_row_idx), (-1, status_row_idx), 4),
+            ('BACKGROUND', (0, due_row_idx), (-1, due_row_idx), colors.HexColor('#FEF2F2')),
+            ('BOX', (0, due_row_idx), (-1, due_row_idx), 1, colors.HexColor('#FECACA')),
+            ('TOPPADDING', (0, due_row_idx), (-1, due_row_idx), 4),
+            ('BOTTOMPADDING', (0, due_row_idx), (-1, due_row_idx), 4),
         ])
+    if status_row_idx is not None:
+        if due_row_idx is None:
+            calc_style_commands.extend([
+                ('BACKGROUND', (0, status_row_idx), (-1, status_row_idx), colors.HexColor('#ECFDF5')),
+                ('BOX', (0, status_row_idx), (-1, status_row_idx), 1, colors.HexColor('#A7F3D0')),
+                ('TOPPADDING', (0, status_row_idx), (-1, status_row_idx), 4),
+                ('BOTTOMPADDING', (0, status_row_idx), (-1, status_row_idx), 4),
+            ])
+        else:
+            calc_style_commands.extend([
+                ('LINEABOVE', (0, status_row_idx), (-1, status_row_idx), 0.5, colors.HexColor('#E2E8F0')),
+                ('TOPPADDING', (0, status_row_idx), (-1, status_row_idx), 3.5),
+                ('BOTTOMPADDING', (0, status_row_idx), (-1, status_row_idx), 3.5),
+            ])
 
     calc_inner_table.setStyle(TableStyle(calc_style_commands))
 
@@ -388,19 +440,33 @@ def generate_payment_receipt_pdf(payment) -> bytes:
     return buf.getvalue()
 
 
-def generate_supplement_invoice_pdf(sale) -> bytes:
+def generate_supplement_invoice_pdf(sale, payment=None) -> bytes:
     """
-    Generates a pixel-perfect, single-page official supplement retail invoice PDF.
+    Generates a pixel-perfect, single-page official supplement receipt PDF
+    matching the on-screen React receipt modal and fee receipt format exactly.
     """
     settings = GymSettings.get_settings()
     gym_name = settings.name or 'Morya Fitness'
-    gym_tagline = settings.tagline or 'Nutrition & Fitness Supplement Store'
+    gym_tagline = settings.tagline or 'Premium Gym & Fitness Center'
     gym_address = settings.address or 'Kanadi Mala, Baragaon Pimpri Road, Sinnar - 422103'
 
-    raw_pm = (sale.payment_method or 'UPI').upper()
-    payment_mode = 'Cash' if 'CASH' in raw_pm else 'UPI'
-    cashier = sale.sold_by.get_full_name() if sale.sold_by else 'Gokul Gugale'
-    sale_date_str = sale.sale_date.strftime('%d %b %Y') if hasattr(sale, 'sale_date') and sale.sale_date else '04 Sep 2026'
+    if payment is None and hasattr(sale, 'payments') and sale.payments.exists():
+        payment = sale.payments.last()
+
+    if payment:
+        raw_pm = (payment.payment_method or 'UPI').upper()
+        payment_mode = 'Cash' if 'CASH' in raw_pm else 'UPI'
+        cashier = payment.received_by.get_full_name() if payment.received_by else 'Gokul Gugale'
+        sale_date_str = payment.payment_date.strftime('%d %b %Y') if hasattr(payment, 'payment_date') and payment.payment_date else '05 Sep 2026'
+        badge_number = payment.receipt_number
+    else:
+        raw_pm = (sale.payment_method or 'UPI').upper()
+        payment_mode = 'Cash' if 'CASH' in raw_pm else 'UPI'
+        cashier = sale.sold_by.get_full_name() if sale.sold_by else 'Gokul Gugale'
+        sale_date_str = sale.sale_date.strftime('%d %b %Y') if hasattr(sale, 'sale_date') and sale.sale_date else '04 Sep 2026'
+        badge_number = sale.invoice_number
+
+    badge_title = "OFFICIAL RECEIPT"
 
     subtotal = float(sale.subtotal)
     discount = float(sale.discount)
@@ -458,8 +524,23 @@ def generate_supplement_invoice_pdf(sale) -> bytes:
     calc_discount_label = ParagraphStyle('CalcDiscountLabel', fontName='Helvetica-Bold', fontSize=9, leading=11, textColor=colors.HexColor('#059669'))
     calc_discount_val = ParagraphStyle('CalcDiscountVal', fontName='Helvetica-Bold', fontSize=9, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#059669'))
 
+    calc_net_label = ParagraphStyle('CalcNetLabel', fontName='Helvetica-Bold', fontSize=9.5, leading=12, textColor=colors.HexColor('#0F172A'))
+    calc_net_val = ParagraphStyle('CalcNetVal', fontName='Helvetica-Bold', fontSize=10, leading=12, alignment=TA_RIGHT, textColor=colors.HexColor('#0F172A'))
+
     calc_paid_label = ParagraphStyle('CalcPaidLabel', fontName='Helvetica-Bold', fontSize=10, leading=12, textColor=colors.HexColor('#059669'))
     calc_paid_val = ParagraphStyle('CalcPaidVal', fontName='Helvetica-Bold', fontSize=10.5, leading=12, alignment=TA_RIGHT, textColor=colors.HexColor('#059669'))
+
+    calc_due_label = ParagraphStyle('CalcDueLabel', fontName='Helvetica-Bold', fontSize=8.5, leading=11, textColor=colors.HexColor('#DC2626'))
+    calc_due_val = ParagraphStyle('CalcDueVal', fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#DC2626'))
+
+    calc_status_label = ParagraphStyle('CalcStatusLabel', fontName='Helvetica-Bold', fontSize=8.5, leading=11, textColor=colors.HexColor('#059669'))
+    calc_status_val = ParagraphStyle('CalcStatusVal', fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#059669'))
+    calc_partial_status_val = ParagraphStyle('CalcPartialStatusVal', fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#D97706'))
+
+    calc_already_paid_label = ParagraphStyle('CalcAlreadyPaidLabel', fontName='Helvetica', fontSize=9, leading=11, textColor=colors.HexColor('#475569'))
+    calc_already_paid_val = ParagraphStyle('CalcAlreadyPaidVal', fontName='Helvetica-Bold', fontSize=9, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#0F172A'))
+    calc_dues_paid_label = ParagraphStyle('CalcDuesPaidLabel', fontName='Helvetica', fontSize=9, leading=11, textColor=colors.HexColor('#475569'))
+    calc_dues_paid_val = ParagraphStyle('CalcDuesPaidVal', fontName='Helvetica-Bold', fontSize=9, leading=11, alignment=TA_RIGHT, textColor=colors.HexColor('#0F172A'))
 
     terms_title = ParagraphStyle('TermsTitle', fontName='Helvetica-Bold', fontSize=8.5, leading=11, textColor=colors.HexColor('#334155'))
     terms_body = ParagraphStyle('TermsBody', fontName='Helvetica', fontSize=7.5, leading=10.5, textColor=colors.HexColor('#64748B'))
@@ -481,8 +562,8 @@ def generate_supplement_invoice_pdf(sale) -> bytes:
     ]
 
     badge_data = [
-        [Paragraph("OFFICIAL RETAIL INVOICE", badge_label_style)],
-        [Paragraph(sale.invoice_number, badge_no_style)],
+        [Paragraph(badge_title, badge_label_style)],
+        [Paragraph(badge_number, badge_no_style)],
         [Paragraph(f"Date: {sale_date_str}", badge_date_style)],
     ]
     badge_table = Table(badge_data, colWidths=[140])
@@ -506,7 +587,7 @@ def generate_supplement_invoice_pdf(sale) -> bytes:
 
     # 2. Customer & Payment Info
     customer_col = [
-        Paragraph("BILLED TO", meta_title_left),
+        Paragraph("RECEIVED FROM", meta_title_left),
         Spacer(1, 2),
         Paragraph(sale.customer_name, meta_name_left),
     ]
@@ -539,9 +620,9 @@ def generate_supplement_invoice_pdf(sale) -> bytes:
     # 3. Items Table
     items_rows = [
         [
-            Paragraph("ITEM DESCRIPTION", th_left),
+            Paragraph("ITEM PARTICULARS", th_left),
             Paragraph("QTY", th_center),
-            Paragraph("UNIT PRICE", th_right),
+            Paragraph("RATE (INR)", th_right),
             Paragraph("TOTAL (INR)", th_right),
         ]
     ]
@@ -574,35 +655,101 @@ def generate_supplement_invoice_pdf(sale) -> bytes:
     inner_elements.append(Spacer(1, 8))
 
     # 4. Calculation Summary
-    calc_w = 240
+    if payment:
+        first_payment = sale.payments.order_by('created_at', 'id').first() if hasattr(sale, 'payments') else None
+        is_dues_payment = bool(first_payment and payment.id != first_payment.id)
+        if hasattr(sale, 'payments'):
+            prior_payments = sale.payments.filter(
+                Q(created_at__lt=payment.created_at) |
+                Q(created_at=payment.created_at, id__lt=payment.id)
+            )
+            already_paid = float(sum(p.amount for p in prior_payments))
+        else:
+            already_paid = 0.0
+        this_pay = float(payment.amount)
+        total_paid_to_date = already_paid + this_pay
+        pending_amount = max(0.0, final_amount - total_paid_to_date)
+    else:
+        is_dues_payment = bool(getattr(sale, 'has_collected_dues', False) or (float(sale.paid_amount) > float(sale.initial_paid_amount)))
+        paid_amount = float(sale.paid_amount)
+        initial_paid = float(sale.initial_paid_amount)
+        already_paid = initial_paid
+        this_pay = max(0.0, paid_amount - initial_paid)
+        total_paid_to_date = paid_amount
+        pending_amount = float(sale.pending_amount)
+
     calc_rows = [
         [Paragraph("Subtotal:", calc_label), Paragraph(f"Rs. {subtotal:,.0f}", calc_val)],
     ]
     if discount > 0:
-        calc_rows.append([Paragraph("Discount:", calc_discount_label), Paragraph(f"-Rs. {discount:,.0f}", calc_discount_val)])
+        calc_rows.append([Paragraph("Discount Applied:", calc_discount_label), Paragraph(f"-Rs. {discount:,.0f}", calc_discount_val)])
     calc_rows.append([Paragraph("Net Payable:", calc_net_label), Paragraph(f"Rs. {final_amount:,.0f}", calc_net_val)])
-    calc_rows.append([Paragraph("Amount Paid (INR):", calc_paid_label), Paragraph(f"Rs. {final_amount:,.0f}", calc_paid_val)])
-    calc_rows.append([Paragraph("Payment Status:", calc_status_label), Paragraph("✓ Paid in Full", calc_status_val)])
 
+    if is_dues_payment:
+        calc_rows.append([Paragraph("Already Paid:", calc_already_paid_label), Paragraph(f"Rs. {already_paid:,.0f}", calc_already_paid_val)])
+        calc_rows.append([Paragraph("Pending Dues:", calc_dues_paid_label), Paragraph(f"Rs. {this_pay:,.0f}", calc_dues_paid_val)])
+        calc_rows.append([Paragraph("Total Amount Paid (INR):", calc_paid_label), Paragraph(f"Rs. {total_paid_to_date:,.0f}", calc_paid_val)])
+    else:
+        calc_rows.append([Paragraph("Amount Paid (INR):", calc_paid_label), Paragraph(f"Rs. {total_paid_to_date:,.0f}", calc_paid_val)])
+
+    if pending_amount > 0:
+        calc_rows.append([Paragraph("Balance Due:", calc_due_label), Paragraph(f"Rs. {pending_amount:,.0f}", calc_due_val)])
+        calc_rows.append([Paragraph("Payment Status:", calc_label), Paragraph("Partially Paid", calc_partial_status_val)])
+    else:
+        calc_rows.append([Paragraph("Payment Status:", calc_status_label), Paragraph("✓ Paid in Full", calc_status_val)])
+
+    calc_w = 240
     calc_inner_table = Table(calc_rows, colWidths=[120, 120])
-    paid_idx = len(calc_rows) - 2
-    status_idx = len(calc_rows) - 1
-    calc_inner_table.setStyle(TableStyle([
+    paid_row_idx = None
+    due_row_idx = None
+    status_row_idx = None
+    for idx, row in enumerate(calc_rows):
+        t = row[0].text if hasattr(row[0], 'text') else ''
+        if 'Amount Paid' in t:
+            paid_row_idx = idx
+        elif 'Balance Due' in t:
+            due_row_idx = idx
+        elif 'Payment Status' in t:
+            status_row_idx = idx
+
+    calc_style_commands = [
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('TOPPADDING', (0,0), (-1,-1), 2.5),
         ('BOTTOMPADDING', (0,0), (-1,-1), 2.5),
         ('LEFTPADDING', (0,0), (-1,-1), 4),
         ('RIGHTPADDING', (0,0), (-1,-1), 4),
-        ('LINEABOVE', (0, paid_idx - 1), (-1, paid_idx - 1), 1, colors.HexColor('#E2E8F0')),
-        ('BACKGROUND', (0, paid_idx), (-1, paid_idx), colors.HexColor('#ECFDF5')),
-        ('BOX', (0, paid_idx), (-1, paid_idx), 1, colors.HexColor('#A7F3D0')),
-        ('TOPPADDING', (0, paid_idx), (-1, paid_idx), 5),
-        ('BOTTOMPADDING', (0, paid_idx), (-1, paid_idx), 5),
-        ('BACKGROUND', (0, status_idx), (-1, status_idx), colors.HexColor('#ECFDF5')),
-        ('BOX', (0, status_idx), (-1, status_idx), 1, colors.HexColor('#A7F3D0')),
-        ('TOPPADDING', (0, status_idx), (-1, status_idx), 4),
-        ('BOTTOMPADDING', (0, status_idx), (-1, status_idx), 4),
-    ]))
+    ]
+    if paid_row_idx is not None:
+        calc_style_commands.extend([
+            ('LINEABOVE', (0, paid_row_idx), (-1, paid_row_idx), 1, colors.HexColor('#E2E8F0')),
+            ('BACKGROUND', (0, paid_row_idx), (-1, paid_row_idx), colors.HexColor('#ECFDF5')),
+            ('BOX', (0, paid_row_idx), (-1, paid_row_idx), 1, colors.HexColor('#A7F3D0')),
+            ('TOPPADDING', (0, paid_row_idx), (-1, paid_row_idx), 5),
+            ('BOTTOMPADDING', (0, paid_row_idx), (-1, paid_row_idx), 5),
+        ])
+    if due_row_idx is not None:
+        calc_style_commands.extend([
+            ('BACKGROUND', (0, due_row_idx), (-1, due_row_idx), colors.HexColor('#FEF2F2')),
+            ('BOX', (0, due_row_idx), (-1, due_row_idx), 1, colors.HexColor('#FECACA')),
+            ('TOPPADDING', (0, due_row_idx), (-1, due_row_idx), 4),
+            ('BOTTOMPADDING', (0, due_row_idx), (-1, due_row_idx), 4),
+        ])
+    if status_row_idx is not None:
+        if due_row_idx is None:
+            calc_style_commands.extend([
+                ('BACKGROUND', (0, status_row_idx), (-1, status_row_idx), colors.HexColor('#ECFDF5')),
+                ('BOX', (0, status_row_idx), (-1, status_row_idx), 1, colors.HexColor('#A7F3D0')),
+                ('TOPPADDING', (0, status_row_idx), (-1, status_row_idx), 4),
+                ('BOTTOMPADDING', (0, status_row_idx), (-1, status_row_idx), 4),
+            ])
+        else:
+            calc_style_commands.extend([
+                ('LINEABOVE', (0, status_row_idx), (-1, status_row_idx), 0.5, colors.HexColor('#E2E8F0')),
+                ('TOPPADDING', (0, status_row_idx), (-1, status_row_idx), 3.5),
+                ('BOTTOMPADDING', (0, status_row_idx), (-1, status_row_idx), 3.5),
+            ])
+
+    calc_inner_table.setStyle(TableStyle(calc_style_commands))
 
     calc_outer = Table([[Paragraph("", styles['Normal']), calc_inner_table]], colWidths=[inner_w - calc_w, calc_w])
     calc_outer.setStyle(TableStyle([
@@ -615,13 +762,13 @@ def generate_supplement_invoice_pdf(sale) -> bytes:
     inner_elements.append(calc_outer)
     inner_elements.append(Spacer(1, 10))
 
-    # 5. Footer & Store Policies
+    # 5. Footer & Store Policies (Matches Fee receipt)
     terms_col = [
-        Paragraph("Store Terms &amp; Policies:", terms_title),
+        Paragraph("Terms &amp; Conditions:", terms_title),
         Spacer(1, 2),
-        Paragraph("1. Authentic fitness supplements guaranteed by Morya Fitness.", terms_body),
-        Paragraph("2. Opened or unsealed products are non-returnable.", terms_body),
-        Paragraph("3. Official computer-generated retail invoice for Morya Fitness, Sinnar.", terms_body),
+        Paragraph("1. Fees and purchases once paid are non-refundable and non-transferable.", terms_body),
+        Paragraph("2. Please maintain gym hygiene, discipline, and equipment care.", terms_body),
+        Paragraph("3. Official computer-generated receipt for Morya Fitness, Sinnar.", terms_body),
     ]
 
     seal_img = Image(logo_path, width=42, height=42) if logo_path and os.path.exists(logo_path) else Paragraph('', styles['Normal'])
@@ -664,3 +811,4 @@ def generate_supplement_invoice_pdf(sale) -> bytes:
 
     doc.build([card_table])
     return buf.getvalue()
+
