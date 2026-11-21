@@ -45,6 +45,14 @@ export const Financials: React.FC = () => {
 
   const isProfitable = summary.net_profit >= 0;
   const isMonthProfitable = summary.this_month_profit >= 0;
+  const lastMonthProfit = (summary.last_month_collection || 0) - (summary.last_month_expenses || 0);
+  const isLastMonthProfitable = lastMonthProfit >= 0;
+
+  // Dynamic month labels (from backend summary or computed dynamically)
+  const now = new Date();
+  const currentMonthLabel = summary.current_month_label || now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const prevMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const previousMonthLabel = summary.previous_month_label || prevMonthDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
   const BAR_COLORS = ['#ea580c', '#3b82f6', '#10b981', '#a855f7', '#ec4899', '#eab308', '#06b6d4'];
 
@@ -189,7 +197,7 @@ export const Financials: React.FC = () => {
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="text-sm font-bold text-slate-900 font-heading">Current Month Performance</h3>
             <span className="text-xs font-bold text-orange-700 bg-orange-50 px-2.5 py-1 rounded-full border border-orange-200">
-              September 2026
+              {currentMonthLabel}
             </span>
           </div>
 
@@ -235,7 +243,7 @@ export const Financials: React.FC = () => {
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="text-sm font-bold text-slate-900 font-heading">Previous Month Performance</h3>
             <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full border border-slate-200">
-              August 2026
+              {previousMonthLabel}
             </span>
           </div>
 
@@ -263,8 +271,12 @@ export const Financials: React.FC = () => {
             <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 flex flex-col justify-between">
               <div>
                 <span className="text-[10px] text-slate-500 uppercase font-bold block">Net Margin</span>
-                <span className="text-lg font-black text-emerald-600 font-heading block mt-0.5">
-                  {formatINR(summary.last_month_collection - summary.last_month_expenses)}
+                <span
+                  className={`text-lg font-black font-heading block mt-0.5 ${
+                    isLastMonthProfitable ? 'text-emerald-600' : 'text-rose-600'
+                  }`}
+                >
+                  {formatINR(lastMonthProfit)}
                 </span>
               </div>
               <span className="text-[9px] text-slate-400 block mt-1 font-medium">Collection - Expense</span>
